@@ -30,16 +30,16 @@ Files:
 
 ## Deploy
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.0.0%2Fazure%2Fvm%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.0.0%2Fazure%2Fvm%2FcreateUiDefinition.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.0.1%2Fazure%2Fvm%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.0.1%2Fazure%2Fvm%2FcreateUiDefinition.json)
 
-The button opens the form of the Azure portal, with the template of the tag `azure-v1.0.0`.
+The button opens the form of the Azure portal, with the template of the tag `azure-v1.0.1`.
 
 With the Azure CLI:
 
 ```sh
 az group create -n my-chroma -l westeurope
 az deployment group create -g my-chroma \
-  --template-uri https://raw.githubusercontent.com/VecturaDB/VecturaDB.Deploy/azure-v1.0.0/azure/vm/azuredeploy.json \
+  --template-uri https://raw.githubusercontent.com/VecturaDB/VecturaDB.Deploy/azure-v1.0.1/azure/vm/azuredeploy.json \
   -p access=allowed-ips allowedIpRanges='["203.0.113.10/32"]' \
      adminPublicKey="$(cat ~/.ssh/id_ed25519.pub)"
 ```
