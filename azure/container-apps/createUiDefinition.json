@@ -1,0 +1,116 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "basics": [
+      {
+        "name": "limits",
+        "type": "Microsoft.Common.InfoBox",
+        "options": {
+          "style": "Warning",
+          "text": "For a few hours of use a day. Each update needs a manual step, the first request after about 10 idle minutes waits about 30 seconds, and the server is slower than on a VM. Read the limits in the README before you deploy.",
+          "uri": "https://github.com/VecturaDB/VecturaDB.Deploy/tree/main/azure/container-apps"
+        }
+      },
+      {
+        "name": "name",
+        "type": "Microsoft.Common.TextBox",
+        "label": "Name",
+        "defaultValue": "chroma",
+        "toolTip": "Name of the container app, and prefix of the other resources.",
+        "constraints": {
+          "required": true,
+          "regex": "^[a-z][a-z0-9-]{0,18}[a-z0-9]$",
+          "validationMessage": "2 to 20 lowercase letters, digits and hyphens, starting with a letter."
+        }
+      },
+      {
+        "name": "server",
+        "type": "Microsoft.Common.TextBlock",
+        "options": {
+          "text": "Server: Chroma 1.5.9. VecturaDB comes to this template with its next release."
+        }
+      },
+      {
+        "name": "access",
+        "type": "Microsoft.Common.OptionsGroup",
+        "label": "Who reaches the server",
+        "defaultValue": "These IP addresses, over HTTPS",
+        "toolTip": "Chroma 1.5.9 has no API keys, so the server is never open to everyone.",
+        "constraints": {
+          "allowedValues": [
+            {
+              "label": "These IP addresses, over HTTPS",
+              "value": "allowed-ips"
+            },
+            {
+              "label": "Only apps in the same Container Apps environment",
+              "value": "internal"
+            }
+          ],
+          "required": true
+        }
+      },
+      {
+        "name": "ips",
+        "type": "Microsoft.Common.TextBox",
+        "label": "Allowed IP addresses",
+        "toolTip": "IPv4 ranges in CIDR notation, separated by commas, like 203.0.113.10/32, 198.51.100.0/24.",
+        "visible": "[equals(basics('access'), 'allowed-ips')]",
+        "constraints": {
+          "required": true,
+          "regex": "^\\s*\\d{1,3}(\\.\\d{1,3}){3}/\\d{1,2}(\\s*,\\s*\\d{1,3}(\\.\\d{1,3}){3}/\\d{1,2})*\\s*$",
+          "validationMessage": "IPv4 ranges in CIDR notation, separated by commas."
+        }
+      }
+    ],
+    "steps": [
+      {
+        "name": "advanced",
+        "label": "Advanced",
+        "elements": [
+          {
+            "name": "size",
+            "type": "Microsoft.Common.DropDown",
+            "label": "CPU and memory of the replica",
+            "defaultValue": "0.5 CPU, 1 GiB",
+            "constraints": {
+              "allowedValues": [
+                {
+                  "label": "0.5 CPU, 1 GiB",
+                  "value": "0.5|1Gi"
+                },
+                {
+                  "label": "1 CPU, 2 GiB",
+                  "value": "1.0|2Gi"
+                }
+              ],
+              "required": true
+            }
+          },
+          {
+            "name": "logRetentionDays",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Days of logs",
+            "defaultValue": "30",
+            "constraints": {
+              "required": true,
+              "regex": "^([3-9][0-9]|[1-6][0-9][0-9]|7[0-2][0-9]|730)$",
+              "validationMessage": "From 30 to 730."
+            }
+          }
+        ]
+      }
+    ],
+    "outputs": {
+      "location": "[location()]",
+      "name": "[basics('name')]",
+      "access": "[basics('access')]",
+      "allowedIpRanges": "[if(equals(basics('access'), 'allowed-ips'), split(replace(basics('ips'), ' ', ''), ','), parse('[]'))]",
+      "cpu": "[first(split(steps('advanced').size, '|'))]",
+      "memory": "[last(split(steps('advanced').size, '|'))]",
+      "logRetentionDays": "[int(steps('advanced').logRetentionDays)]"
+    }
+  }
+}
