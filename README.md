@@ -6,7 +6,7 @@ For now there is one, for Azure:
 
 - [azure/vm](azure/vm/): one Azure VM with Docker and Caddy, HTTPS, allowed IP addresses, the data on a managed disk and backups with Azure Disk Backup.
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.0.1%2Fazure%2Fvm%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.0.1%2Fazure%2Fvm%2FcreateUiDefinition.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.0.2%2Fazure%2Fvm%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.0.2%2Fazure%2Fvm%2FcreateUiDefinition.json)
 
 The page of the template on the website: [vecturadb.org/deploy/chroma](https://vecturadb.org/deploy/chroma/).
 

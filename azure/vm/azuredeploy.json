@@ -1,12 +1,11 @@
 {
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-  "languageVersion": "2.0",
   "contentVersion": "1.0.0.0",
   "metadata": {
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "5442092171313354927"
+      "templateHash": "1162584749058792754"
     },
     "description": "Chroma or VecturaDB on one Azure VM with Docker, the data on a managed disk."
   },
@@ -85,9 +84,6 @@
     },
     "allowedIpRanges": {
       "type": "array",
-      "items": {
-        "type": "string"
-      },
       "defaultValue": [],
       "metadata": {
         "description": "IP ranges, in CIDR notation, that may reach the server over HTTPS when access is allowed-ips."
@@ -205,8 +201,8 @@
     "diskSnapshotContributor": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7efff54f-a5b4-42b5-a1c5-5411624893ce')]",
     "diskRestoreOperator": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b50d9833-a0cb-478e-945f-707fcc997c13')]"
   },
-  "resources": {
-    "nsg": {
+  "resources": [
+    {
       "type": "Microsoft.Network/networkSecurityGroups",
       "apiVersion": "2024-05-01",
       "name": "[format('{0}-nsg', parameters('name'))]",
@@ -218,7 +214,7 @@
         "securityRules": "[if(equals(parameters('access'), 'internal'), createArray(), createArray(createObject('name', 'certificate-challenge', 'properties', createObject('priority', 100, 'direction', 'Inbound', 'access', 'Allow', 'protocol', 'Tcp', 'sourceAddressPrefix', 'Internet', 'sourcePortRange', '*', 'destinationAddressPrefix', '*', 'destinationPortRange', '80')), createObject('name', 'https', 'properties', union(createObject('priority', 110, 'direction', 'Inbound', 'access', 'Allow', 'protocol', 'Tcp', 'sourcePortRange', '*', 'destinationAddressPrefix', '*', 'destinationPortRange', '443'), if(equals(parameters('access'), 'public'), createObject('sourceAddressPrefix', 'Internet'), createObject('sourceAddressPrefixes', parameters('allowedIpRanges')))))))]"
       }
     },
-    "vnet": {
+    {
       "type": "Microsoft.Network/virtualNetworks",
       "apiVersion": "2024-05-01",
       "name": "[format('{0}-vnet', parameters('name'))]",
@@ -240,7 +236,7 @@
         ]
       }
     },
-    "publicIp": {
+    {
       "condition": "[variables('isPublic')]",
       "type": "Microsoft.Network/publicIPAddresses",
       "apiVersion": "2024-05-01",
@@ -256,7 +252,7 @@
         }
       }
     },
-    "nic": {
+    {
       "type": "Microsoft.Network/networkInterfaces",
       "apiVersion": "2024-05-01",
       "name": "[format('{0}-nic', parameters('name'))]",
@@ -268,17 +264,17 @@
         "ipConfigurations": [
           {
             "name": "ipconfig1",
-            "properties": "[union(createObject('subnet', createObject('id', reference('vnet').subnets[0].id), 'privateIPAllocationMethod', 'Dynamic'), if(variables('isPublic'), createObject('publicIPAddress', createObject('id', resourceId('Microsoft.Network/publicIPAddresses', format('{0}-ip', parameters('name'))))), createObject()))]"
+            "properties": "[union(createObject('subnet', createObject('id', reference(resourceId('Microsoft.Network/virtualNetworks', format('{0}-vnet', parameters('name'))), '2024-05-01').subnets[0].id), 'privateIPAllocationMethod', 'Dynamic'), if(variables('isPublic'), createObject('publicIPAddress', createObject('id', resourceId('Microsoft.Network/publicIPAddresses', format('{0}-ip', parameters('name'))))), createObject()))]"
           }
         ]
       },
       "dependsOn": [
-        "nsg",
-        "publicIp",
-        "vnet"
+        "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-nsg', parameters('name')))]",
+        "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-ip', parameters('name')))]",
+        "[resourceId('Microsoft.Network/virtualNetworks', format('{0}-vnet', parameters('name')))]"
       ]
     },
-    "dataDisk": {
+    {
       "type": "Microsoft.Compute/disks",
       "apiVersion": "2024-03-02",
       "name": "[format('{0}-data', parameters('name'))]",
@@ -293,7 +289,7 @@
         "diskSizeGB": "[parameters('dataDiskSizeGB')]"
       }
     },
-    "vm": {
+    {
       "type": "Microsoft.Compute/virtualMachines",
       "apiVersion": "2024-07-01",
       "name": "[parameters('name')]",
@@ -361,11 +357,11 @@
         }
       },
       "dependsOn": [
-        "dataDisk",
-        "nic"
+        "[resourceId('Microsoft.Compute/disks', format('{0}-data', parameters('name')))]",
+        "[resourceId('Microsoft.Network/networkInterfaces', format('{0}-nic', parameters('name')))]"
       ]
     },
-    "configure": {
+    {
       "type": "Microsoft.Compute/virtualMachines/runCommands",
       "apiVersion": "2024-07-01",
       "name": "[format('{0}/{1}', parameters('name'), 'configure')]",
@@ -389,7 +385,7 @@
           },
           {
             "name": "HOST",
-            "value": "[if(variables('isPublic'), if(empty(parameters('domainName')), reference('publicIp').dnsSettings.fqdn, parameters('domainName')), '')]"
+            "value": "[if(variables('isPublic'), if(empty(parameters('domainName')), reference(resourceId('Microsoft.Network/publicIPAddresses', format('{0}-ip', parameters('name'))), '2024-05-01').dnsSettings.fqdn, parameters('domainName')), '')]"
           },
           {
             "name": "ALLOWED_IPS",
@@ -414,11 +410,11 @@
         "treatFailureAsDeploymentFailure": true
       },
       "dependsOn": [
-        "publicIp",
-        "vm"
+        "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-ip', parameters('name')))]",
+        "[resourceId('Microsoft.Compute/virtualMachines', parameters('name'))]"
       ]
     },
-    "vault": {
+    {
       "condition": "[equals(parameters('backup'), 'disk')]",
       "type": "Microsoft.DataProtection/backupVaults",
       "apiVersion": "2024-04-01",
@@ -445,7 +441,7 @@
         }
       }
     },
-    "policy": {
+    {
       "condition": "[equals(parameters('backup'), 'disk')]",
       "type": "Microsoft.DataProtection/backupVaults/backupPolicies",
       "apiVersion": "2024-04-01",
@@ -507,10 +503,10 @@
         ]
       },
       "dependsOn": [
-        "vault"
+        "[resourceId('Microsoft.DataProtection/backupVaults', format('{0}-backup', parameters('name')))]"
       ]
     },
-    "readDisk": {
+    {
       "condition": "[equals(parameters('backup'), 'disk')]",
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
@@ -518,43 +514,43 @@
       "name": "[guid(resourceId('Microsoft.Compute/disks', format('{0}-data', parameters('name'))), 'disk-backup-reader', parameters('name'))]",
       "properties": {
         "roleDefinitionId": "[variables('diskBackupReader')]",
-        "principalId": "[reference('vault', '2024-04-01', 'full').identity.principalId]",
+        "principalId": "[reference(resourceId('Microsoft.DataProtection/backupVaults', format('{0}-backup', parameters('name'))), '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "dataDisk",
-        "vault"
+        "[resourceId('Microsoft.Compute/disks', format('{0}-data', parameters('name')))]",
+        "[resourceId('Microsoft.DataProtection/backupVaults', format('{0}-backup', parameters('name')))]"
       ]
     },
-    "writeSnapshots": {
+    {
       "condition": "[equals(parameters('backup'), 'disk')]",
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "name": "[guid(resourceGroup().id, 'disk-snapshot-contributor', parameters('name'))]",
       "properties": {
         "roleDefinitionId": "[variables('diskSnapshotContributor')]",
-        "principalId": "[reference('vault', '2024-04-01', 'full').identity.principalId]",
+        "principalId": "[reference(resourceId('Microsoft.DataProtection/backupVaults', format('{0}-backup', parameters('name'))), '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "vault"
+        "[resourceId('Microsoft.DataProtection/backupVaults', format('{0}-backup', parameters('name')))]"
       ]
     },
-    "restoreDisks": {
+    {
       "condition": "[equals(parameters('backup'), 'disk')]",
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "name": "[guid(resourceGroup().id, 'disk-restore-operator', parameters('name'))]",
       "properties": {
         "roleDefinitionId": "[variables('diskRestoreOperator')]",
-        "principalId": "[reference('vault', '2024-04-01', 'full').identity.principalId]",
+        "principalId": "[reference(resourceId('Microsoft.DataProtection/backupVaults', format('{0}-backup', parameters('name'))), '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
-        "vault"
+        "[resourceId('Microsoft.DataProtection/backupVaults', format('{0}-backup', parameters('name')))]"
       ]
     },
-    "protectDisk": {
+    {
       "condition": "[equals(parameters('backup'), 'disk')]",
       "type": "Microsoft.DataProtection/backupVaults/backupInstances",
       "apiVersion": "2024-04-01",
@@ -584,32 +580,32 @@
         }
       },
       "dependsOn": [
-        "dataDisk",
-        "policy",
-        "readDisk",
-        "vault",
-        "writeSnapshots"
+        "[resourceId('Microsoft.Compute/disks', format('{0}-data', parameters('name')))]",
+        "[resourceId('Microsoft.DataProtection/backupVaults/backupPolicies', format('{0}-backup', parameters('name')), 'data-disk')]",
+        "[extensionResourceId(resourceId('Microsoft.Compute/disks', format('{0}-data', parameters('name'))), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.Compute/disks', format('{0}-data', parameters('name'))), 'disk-backup-reader', parameters('name')))]",
+        "[resourceId('Microsoft.DataProtection/backupVaults', format('{0}-backup', parameters('name')))]",
+        "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, 'disk-snapshot-contributor', parameters('name')))]"
       ]
     }
-  },
+  ],
   "outputs": {
     "url": {
       "type": "string",
       "metadata": {
         "description": "Address for the clients."
       },
-      "value": "[if(variables('isPublic'), format('https://{0}', if(empty(parameters('domainName')), reference('publicIp').dnsSettings.fqdn, parameters('domainName'))), format('http://{0}:8000', reference('nic').ipConfigurations[0].properties.privateIPAddress))]"
+      "value": "[if(variables('isPublic'), format('https://{0}', if(empty(parameters('domainName')), reference(resourceId('Microsoft.Network/publicIPAddresses', format('{0}-ip', parameters('name'))), '2024-05-01').dnsSettings.fqdn, parameters('domainName'))), format('http://{0}:8000', reference(resourceId('Microsoft.Network/networkInterfaces', format('{0}-nic', parameters('name'))), '2024-05-01').ipConfigurations[0].properties.privateIPAddress))]"
     },
     "publicIp": {
       "type": "string",
       "metadata": {
         "description": "Public IP of the VM; with your own domain name, its DNS A record points here."
       },
-      "value": "[if(variables('isPublic'), reference('publicIp').ipAddress, '')]"
+      "value": "[if(variables('isPublic'), reference(resourceId('Microsoft.Network/publicIPAddresses', format('{0}-ip', parameters('name'))), '2024-05-01').ipAddress, '')]"
     },
     "privateIp": {
       "type": "string",
-      "value": "[reference('nic').ipConfigurations[0].properties.privateIPAddress]"
+      "value": "[reference(resourceId('Microsoft.Network/networkInterfaces', format('{0}-nic', parameters('name'))), '2024-05-01').ipConfigurations[0].properties.privateIPAddress]"
     },
     "engine": {
       "type": "string",

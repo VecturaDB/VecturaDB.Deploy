@@ -44,7 +44,7 @@ param cpuArchitecture string = 'auto'
 param access string = 'internal'
 
 @description('IP ranges, in CIDR notation, that may reach the server over HTTPS when access is allowed-ips.')
-param allowedIpRanges string[] = []
+param allowedIpRanges array = []
 
 @description('VecturaDB only: the API key of the admin user. Every request then needs it, in the x-chroma-token header. Required when access is public.')
 @secure()
