@@ -139,9 +139,10 @@ So, with backups on, turn soft delete off, delete the backup instance, then dele
 
 In the portal:
 
-1. Open the backup vault, `<name>-backup`, and turn soft delete off in its security settings.
-2. In the vault, open Backup instances, select `<name>-data`, and delete it, with its backup data.
-3. Delete the resource group.
+1. Open the backup vault, `<name>-backup`. Under Manage, open Properties. In Cyber recovery settings, on the Soft delete row, select Update, clear Enable Soft Delete, and select Update.
+2. Under Manage, open Backup instances. The filter starts on another datasource type, so the list looks empty: set Datasource type to Azure Disks, and open `<name>-data`.
+3. Select Delete. Type the name of the instance, choose a reason and write a comment: all three are required. Select Delete, then Confirm.
+4. Open the resource group and select Delete resource group. Type the name of the group, select Delete, then Delete again to confirm.
 
 With the Azure CLI:
 
@@ -155,7 +156,7 @@ while az rest --method get --url "$VAULT/backupInstances/$NAME-data?api-version=
 az group delete -n $RG --yes
 ```
 
-In our tests soft delete went off at once, the backup instance was gone after 80-103 seconds, and the group after 126-143 seconds. Then nothing was left: no resource, no snapshot, no deleted vault.
+In our tests, in the portal and with the CLI, soft delete went off at once, the backup instance was gone after 70-103 seconds, and the group after 126-190 seconds. Then nothing was left: no resource, no snapshot, no deleted vault.
 
 If you delete the group without these steps:
 
