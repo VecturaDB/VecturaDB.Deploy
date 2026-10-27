@@ -29,7 +29,7 @@
         "name": "server",
         "type": "Microsoft.Common.TextBlock",
         "options": {
-          "text": "Server: Chroma 1.5.9. VecturaDB comes to this template with its next release."
+          "text": "Server: Chroma 1.5.9."
         }
       },
       {

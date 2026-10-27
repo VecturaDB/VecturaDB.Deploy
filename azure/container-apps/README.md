@@ -6,8 +6,6 @@ The template runs **Chroma 1.5.9** (`ghcr.io/chroma-core/chroma:1.5.9`) on Azure
 
 **It is for a few hours of use a day.** For a server in use all day, the [VM template](../vm/) is cheaper, faster and needs no manual step at updates: it is the one we recommend.
 
-VecturaDB comes to this template with its next release, which fixes an error we found on SMB shares.
-
 ## Limits
 
 Read them before you deploy:
@@ -46,13 +44,20 @@ The server reaches the share through two mounts:
 
 ## Deploy
 
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.1.0%2Fazure%2Fcontainer-apps%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.1.0%2Fazure%2Fcontainer-apps%2FcreateUiDefinition.json)
+
+The button opens the form of the Azure portal, with the template of the tag `azure-v1.1.0`. When the portal shows "Your deployment is complete", open **Outputs** in the menu on the left: `url` is the address of the server, for the clients.
+
+With the Azure CLI:
+
 ```sh
 az group create -n my-chroma -l westeurope
-az deployment group create -g my-chroma -f main.bicep \
+az deployment group create -g my-chroma \
+  --template-uri https://raw.githubusercontent.com/VecturaDB/VecturaDB.Deploy/azure-v1.1.0/azure/container-apps/azuredeploy.json \
   -p allowedIpRanges='["203.0.113.10/32"]'
 ```
 
-The `url` output is the address for the clients, over HTTPS. In our tests a deployment from zero took about 15 minutes (881 seconds), most of it for the environment.
+The `url` output is the address for the clients, over HTTPS. In our tests a deployment from zero took 15-17 minutes (881-1002 seconds), most of it for the environment.
 
 ## Update
 
@@ -84,6 +89,27 @@ Not in the table:
 - Azure Files: 0.06 USD per GB stored a month, and the transactions. In our tests a write to Chroma cost about 27 transactions of the share, mostly write transactions: about 0.03 USD for every 1,000 writes. Reads cost almost none. A replica that waits without requests made about 27 transactions a minute.
 - Log Analytics bills the logs it receives.
 - Other apps in the same subscription use the same free grant.
+
+## Delete everything
+
+There is no backup vault here: deleting the resource group deletes the whole deployment. In our tests it took 27 minutes (1632 seconds), most of it for the Container Apps environment.
+
+In the portal, open the resource group and select Delete resource group. Type the name of the group, select Delete, then Delete again to confirm.
+
+With the Azure CLI:
+
+```sh
+az group delete -n my-chroma --yes
+```
+
+Two things stay recoverable for 14 days after the deletion, as Azure does for these resources, and then go away. In our tests both showed up in the lists of deleted resources right after the deletion:
+
+- the storage account, with the share and the data in it ([recover a deleted storage account](https://learn.microsoft.com/en-us/azure/storage/common/storage-account-recover));
+- the Log Analytics workspace, with the logs ([delete and recover a workspace](https://learn.microsoft.com/en-us/azure/azure-monitor/logs/delete-workspace)). To remove the logs at once, delete the workspace permanently before the group:
+
+```sh
+az monitor log-analytics workspace delete -g my-chroma -n chroma-logs --force --yes
+```
 
 ## Why the VM is the recommended choice
 
