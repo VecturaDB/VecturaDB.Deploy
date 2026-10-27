@@ -1,0 +1,282 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "basics": [
+      {
+        "name": "name",
+        "type": "Microsoft.Common.TextBox",
+        "label": "Name",
+        "defaultValue": "chroma",
+        "toolTip": "Name of the VM, and prefix of the other resources.",
+        "constraints": {
+          "required": true,
+          "regex": "^[a-z][a-z0-9-]{0,18}[a-z0-9]$",
+          "validationMessage": "2 to 20 lowercase letters, digits and hyphens, starting with a letter."
+        }
+      },
+      {
+        "name": "engine",
+        "type": "Microsoft.Common.DropDown",
+        "label": "Server",
+        "defaultValue": "Chroma 1.5.9",
+        "toolTip": "VecturaDB is built from Chroma and adds sparse vectors, BM25, the Search API, collection fork and API keys.",
+        "constraints": {
+          "allowedValues": [
+            {
+              "label": "Chroma 1.5.9",
+              "value": "chroma"
+            },
+            {
+              "label": "VecturaDB 1.0.0-preview.3.post1",
+              "value": "vecturadb"
+            }
+          ],
+          "required": true
+        }
+      },
+      {
+        "name": "apiKey",
+        "type": "Microsoft.Common.PasswordBox",
+        "label": {
+          "password": "API key",
+          "confirmPassword": "Confirm the API key"
+        },
+        "toolTip": "Every request needs this key, in the x-chroma-token header.",
+        "visible": "[equals(basics('engine'), 'vecturadb')]",
+        "constraints": {
+          "required": true,
+          "regex": "^\\S{16,}$",
+          "validationMessage": "At least 16 characters, without spaces."
+        },
+        "options": {
+          "hideConfirmation": false
+        }
+      },
+      {
+        "name": "vmSize",
+        "type": "Microsoft.Common.DropDown",
+        "label": "Size of the VM",
+        "defaultValue": "B2pts_v2: 2 CPU (Arm), 1 GiB",
+        "toolTip": "The three sizes we tested. B2pts_v2 is an Arm VM. B1s and B1ms belong to a size series that Azure has marked End of Life.",
+        "constraints": {
+          "allowedValues": [
+            {
+              "label": "B2pts_v2: 2 CPU (Arm), 1 GiB",
+              "value": "Standard_B2pts_v2"
+            },
+            {
+              "label": "B1s: 1 CPU, 1 GiB",
+              "value": "Standard_B1s"
+            },
+            {
+              "label": "B1ms: 1 CPU, 2 GiB",
+              "value": "Standard_B1ms"
+            }
+          ],
+          "required": true
+        }
+      },
+      {
+        "name": "access",
+        "type": "Microsoft.Common.OptionsGroup",
+        "label": "Who reaches the server",
+        "defaultValue": "These IP addresses, over HTTPS",
+        "toolTip": "Public needs VecturaDB with an API key: Chroma 1.5.9 has no API keys.",
+        "constraints": {
+          "allowedValues": [
+            {
+              "label": "These IP addresses, over HTTPS",
+              "value": "allowed-ips"
+            },
+            {
+              "label": "Only the virtual network, HTTP on the private address",
+              "value": "internal"
+            },
+            {
+              "label": "Anyone with the API key, over HTTPS",
+              "value": "public"
+            }
+          ],
+          "required": true,
+          "validations": [
+            {
+              "isValid": "[or(not(equals(basics('access'), 'public')), equals(basics('engine'), 'vecturadb'))]",
+              "message": "Public access needs VecturaDB and an API key."
+            }
+          ]
+        }
+      },
+      {
+        "name": "ips",
+        "type": "Microsoft.Common.TextBox",
+        "label": "Allowed IP addresses",
+        "toolTip": "IPv4 ranges in CIDR notation, separated by commas, like 203.0.113.10/32, 198.51.100.0/24.",
+        "visible": "[equals(basics('access'), 'allowed-ips')]",
+        "constraints": {
+          "required": true,
+          "regex": "^\\s*\\d{1,3}(\\.\\d{1,3}){3}/\\d{1,2}(\\s*,\\s*\\d{1,3}(\\.\\d{1,3}){3}/\\d{1,2})*\\s*$",
+          "validationMessage": "IPv4 ranges in CIDR notation, separated by commas."
+        }
+      },
+      {
+        "name": "ssh",
+        "type": "Microsoft.Compute.CredentialsCombo",
+        "label": {
+          "authenticationType": "Authentication type",
+          "password": "Password",
+          "confirmPassword": "Confirm password",
+          "sshPublicKey": "SSH public key"
+        },
+        "toolTip": {
+          "sshPublicKey": "Port 22 stays closed: the key is only for Azure Bastion, or after you open the port yourself."
+        },
+        "constraints": {
+          "required": true
+        },
+        "options": {
+          "hideConfirmation": true,
+          "hidePassword": true
+        },
+        "osPlatform": "Linux"
+      }
+    ],
+    "steps": [
+      {
+        "name": "https",
+        "label": "HTTPS",
+        "elements": [
+          {
+            "name": "info",
+            "type": "Microsoft.Common.TextBlock",
+            "visible": "[not(equals(basics('access'), 'internal'))]",
+            "options": {
+              "text": "Caddy gets a Let's Encrypt certificate for the Azure name of the public IP, or for your own domain name. Port 80 is open only for the certificate challenge."
+            }
+          },
+          {
+            "name": "domainName",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Your own domain name (optional)",
+            "toolTip": "Like chroma.example.com, with a DNS A record to the public IP of the VM. Empty: the Azure name of the public IP.",
+            "visible": "[not(equals(basics('access'), 'internal'))]",
+            "constraints": {
+              "required": false,
+              "regex": "^$|^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,}$",
+              "validationMessage": "A domain name in lowercase, like chroma.example.com."
+            }
+          },
+          {
+            "name": "acmeEmail",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Email for Let's Encrypt (optional)",
+            "visible": "[not(equals(basics('access'), 'internal'))]",
+            "constraints": {
+              "required": false,
+              "regex": "^$|^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+              "validationMessage": "An email address."
+            }
+          }
+        ]
+      },
+      {
+        "name": "data",
+        "label": "Data and backups",
+        "elements": [
+          {
+            "name": "dataDiskSizeGB",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Size of the data disk in GiB",
+            "defaultValue": "16",
+            "toolTip": "Standard SSD. You can make it larger later, not smaller.",
+            "constraints": {
+              "required": true,
+              "regex": "^([4-9]|[1-9][0-9]{1,2}|[1-3][0-9]{3}|40[0-8][0-9]|409[0-6])$",
+              "validationMessage": "From 4 to 4096."
+            }
+          },
+          {
+            "name": "backup",
+            "type": "Microsoft.Common.OptionsGroup",
+            "label": "Backups of the data disk",
+            "defaultValue": "Yes, with Azure Disk Backup",
+            "constraints": {
+              "allowedValues": [
+                {
+                  "label": "Yes, with Azure Disk Backup",
+                  "value": "disk"
+                },
+                {
+                  "label": "No",
+                  "value": "none"
+                }
+              ],
+              "required": true
+            }
+          },
+          {
+            "name": "backupEveryHours",
+            "type": "Microsoft.Common.DropDown",
+            "label": "A backup every",
+            "defaultValue": "24 hours",
+            "visible": "[equals(steps('data').backup, 'disk')]",
+            "constraints": {
+              "allowedValues": [
+                {
+                  "label": "4 hours",
+                  "value": 4
+                },
+                {
+                  "label": "6 hours",
+                  "value": 6
+                },
+                {
+                  "label": "8 hours",
+                  "value": 8
+                },
+                {
+                  "label": "12 hours",
+                  "value": 12
+                },
+                {
+                  "label": "24 hours",
+                  "value": 24
+                }
+              ],
+              "required": true
+            }
+          },
+          {
+            "name": "backupRetentionDays",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Days a backup is kept",
+            "defaultValue": "7",
+            "visible": "[equals(steps('data').backup, 'disk')]",
+            "constraints": {
+              "required": true,
+              "regex": "^([1-9]|[1-9][0-9]|[1-2][0-9][0-9]|3[0-5][0-9]|360)$",
+              "validationMessage": "From 1 to 360."
+            }
+          }
+        ]
+      }
+    ],
+    "outputs": {
+      "location": "[location()]",
+      "name": "[basics('name')]",
+      "engine": "[basics('engine')]",
+      "apiKey": "[if(equals(basics('engine'), 'vecturadb'), basics('apiKey'), '')]",
+      "vmSize": "[basics('vmSize')]",
+      "access": "[basics('access')]",
+      "allowedIpRanges": "[if(equals(basics('access'), 'allowed-ips'), split(replace(basics('ips'), ' ', ''), ','), parse('[]'))]",
+      "adminPublicKey": "[basics('ssh').sshPublicKey]",
+      "domainName": "[if(equals(basics('access'), 'internal'), '', steps('https').domainName)]",
+      "acmeEmail": "[if(equals(basics('access'), 'internal'), '', steps('https').acmeEmail)]",
+      "dataDiskSizeGB": "[int(steps('data').dataDiskSizeGB)]",
+      "backup": "[steps('data').backup]",
+      "backupEveryHours": "[if(equals(steps('data').backup, 'disk'), steps('data').backupEveryHours, 24)]",
+      "backupRetentionDays": "[if(equals(steps('data').backup, 'disk'), int(steps('data').backupRetentionDays), 7)]"
+    }
+  }
+}

@@ -1,0 +1,630 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "languageVersion": "2.0",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.48.1.52935",
+      "templateHash": "5442092171313354927"
+    },
+    "description": "Chroma or VecturaDB on one Azure VM with Docker, the data on a managed disk."
+  },
+  "parameters": {
+    "name": {
+      "type": "string",
+      "defaultValue": "chroma",
+      "minLength": 2,
+      "maxLength": 20,
+      "metadata": {
+        "description": "Name of the VM, and prefix of the other resources: 2 to 20 lowercase letters, digits and hyphens."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Region of the resources."
+      }
+    },
+    "engine": {
+      "type": "string",
+      "defaultValue": "chroma",
+      "allowedValues": [
+        "chroma",
+        "vecturadb"
+      ],
+      "metadata": {
+        "description": "The server: chroma (Chroma 1.5.9) or vecturadb (VecturaDB, built from Chroma, with sparse vectors, BM25, the Search API, collection fork and API keys)."
+      }
+    },
+    "chromaImage": {
+      "type": "string",
+      "defaultValue": "ghcr.io/chroma-core/chroma:1.5.9",
+      "metadata": {
+        "description": "Image of Chroma. The same image is on Docker Hub as chromadb/chroma."
+      }
+    },
+    "vecturadbImage": {
+      "type": "string",
+      "defaultValue": "ghcr.io/vecturadb/vecturadb:1.0.0-preview.3.post1",
+      "metadata": {
+        "description": "Image of VecturaDB."
+      }
+    },
+    "vmSize": {
+      "type": "string",
+      "defaultValue": "Standard_B2pts_v2",
+      "metadata": {
+        "description": "Size of the VM. Tested: Standard_B2pts_v2 (Arm), Standard_B1s, Standard_B1ms. Standard_B1ls runs out of memory at the first boot."
+      }
+    },
+    "cpuArchitecture": {
+      "type": "string",
+      "defaultValue": "auto",
+      "allowedValues": [
+        "auto",
+        "x64",
+        "arm64"
+      ],
+      "metadata": {
+        "description": "CPU of the VM size. auto: arm64 when the letters after the size number hold a p, like Standard_B2pts_v2 or Standard_D2ps_v5, x64 otherwise."
+      }
+    },
+    "access": {
+      "type": "string",
+      "defaultValue": "internal",
+      "allowedValues": [
+        "internal",
+        "allowed-ips",
+        "public"
+      ],
+      "metadata": {
+        "description": "Who reaches the server: internal (only the virtual network, HTTP on the private address), allowed-ips (HTTPS from the allowed IP ranges), or public (HTTPS from anywhere, VecturaDB with an API key only)."
+      }
+    },
+    "allowedIpRanges": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "defaultValue": [],
+      "metadata": {
+        "description": "IP ranges, in CIDR notation, that may reach the server over HTTPS when access is allowed-ips."
+      }
+    },
+    "apiKey": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "VecturaDB only: the API key of the admin user. Every request then needs it, in the x-chroma-token header. Required when access is public."
+      }
+    },
+    "domainName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Your own domain name for HTTPS, like chroma.example.com, with a DNS A record to the public IP. Empty: the Azure name of the public IP."
+      }
+    },
+    "acmeEmail": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Email for the account of the HTTPS certificate at Let's Encrypt. Optional."
+      }
+    },
+    "dataDiskSizeGB": {
+      "type": "int",
+      "defaultValue": 16,
+      "minValue": 4,
+      "maxValue": 32767,
+      "metadata": {
+        "description": "Size of the data disk in GiB (Standard SSD)."
+      }
+    },
+    "adminUsername": {
+      "type": "string",
+      "defaultValue": "azureuser",
+      "metadata": {
+        "description": "Name of the admin account of the VM."
+      }
+    },
+    "adminPublicKey": {
+      "type": "string",
+      "metadata": {
+        "description": "SSH public key of the admin account. Port 22 stays closed: the key is only for access through Azure Bastion or after you open the port yourself."
+      }
+    },
+    "backup": {
+      "type": "string",
+      "defaultValue": "disk",
+      "allowedValues": [
+        "disk",
+        "none"
+      ],
+      "metadata": {
+        "description": "Backups of the data disk: disk (Azure Disk Backup, incremental snapshots) or none."
+      }
+    },
+    "backupEveryHours": {
+      "type": "int",
+      "defaultValue": 24,
+      "allowedValues": [
+        4,
+        6,
+        8,
+        12,
+        24
+      ],
+      "metadata": {
+        "description": "Hours between two backups of the data disk."
+      }
+    },
+    "backupRetentionDays": {
+      "type": "int",
+      "defaultValue": 7,
+      "minValue": 1,
+      "maxValue": 360,
+      "metadata": {
+        "description": "Days a backup is kept."
+      }
+    },
+    "backupSoftDelete": {
+      "type": "string",
+      "defaultValue": "On",
+      "allowedValues": [
+        "On",
+        "Off"
+      ],
+      "metadata": {
+        "description": "Soft delete of the backup vault. On keeps deleted backups for 14 days, against a deletion by mistake or by an attacker; the vault then stays 14 days after its deletion. Off only for tests."
+      }
+    },
+    "deployedAt": {
+      "type": "string",
+      "defaultValue": "[utcNow()]",
+      "metadata": {
+        "description": "Time of the deployment: leave the default. A run command with unchanged properties does not run again, so this value makes every deployment run configure.sh, even with the same parameters."
+      }
+    }
+  },
+  "variables": {
+    "$fxv#0": "#!/bin/bash\n# First boot of the VM: the data disk, Docker and Caddy. The server itself is set up by configure.sh, which the\n# template runs at every deployment.\nset -eux\nexport DEBIAN_FRONTEND=noninteractive\n\n# The data disk at LUN 0: formatted once, mounted at /var/lib/chroma.\ndisk=\"\"\nfor i in $(seq 1 90); do\n  for d in /dev/disk/azure/data/by-lun/0 /dev/disk/azure/scsi1/lun0; do\n    if [ -e \"$d\" ]; then disk=$d; break 2; fi\n  done\n  sleep 2\ndone\n[ -n \"$disk\" ] || { echo \"no data disk at LUN 0\"; exit 1; }\nblkid \"$disk\" >/dev/null 2>&1 || mkfs.ext4 -q -L chroma-data \"$disk\"\nmkdir -p /var/lib/chroma\ngrep -q 'LABEL=chroma-data' /etc/fstab || echo 'LABEL=chroma-data /var/lib/chroma ext4 defaults,nofail,discard 0 2' >> /etc/fstab\nmount -a\nmountpoint -q /var/lib/chroma\n\n# Docker, with bounded logs.\nmkdir -p /etc/docker\ncat > /etc/docker/daemon.json <<'EOF'\n{\"log-driver\": \"json-file\", \"log-opts\": {\"max-size\": \"10m\", \"max-file\": \"3\"}}\nEOF\napt-get update -q\napt-get install -y -q docker.io curl gnupg debian-keyring debian-archive-keyring apt-transport-https\nsystemctl enable --now docker\n\n# Caddy from its official apt repository, which is signed. Ubuntu 24.04 has an older Caddy in universe.\ncurl -1sLf https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg\ncurl -1sLf https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt > /etc/apt/sources.list.d/caddy-stable.list\napt-get update -q\napt-get install -y -q caddy\nsystemctl disable --now caddy\n\ntouch /var/lib/chroma-first-boot-done\n",
+    "$fxv#1": "#!/bin/sh\n# Run Command of the template, at every deployment: starts the server with the image and the settings of this\n# deployment. The old container stops before the new one starts, so one process at a time works on /var/lib/chroma.\n# Parameters arrive as environment variables: ENGINE, IMAGE, ACCESS (internal, allowed-ips, public), HOST,\n# ALLOWED_IPS (separated by spaces), ACME_EMAIL, DEPLOYED_AT (the time of the deployment, which makes every\n# deployment run this script), and API_KEY (protected). POSIX sh, whatever shell runs it.\nset -eu\necho \"deployment of ${DEPLOYED_AT:-unknown time}\"\ncloud-init status --wait >/dev/null || true\n[ -e /var/lib/chroma-first-boot-done ] || { echo \"the first boot did not finish: see /var/log/cloud-init-output.log\"; exit 1; }\nmountpoint -q /var/lib/chroma || { echo \"the data disk is not mounted at /var/lib/chroma\"; exit 1; }\n\n# Docker starts only once the data disk is mounted. The fstab line has nofail, which does not hold back the services:\n# a VM that boots without the disk would otherwise serve an empty database from the OS disk.\nmkdir -p /etc/systemd/system/docker.service.d\nprintf '[Unit]\\nRequiresMountsFor=/var/lib/chroma\\n' > /etc/systemd/system/docker.service.d/chroma-data.conf\nsystemctl daemon-reload\n\nmkdir -p /etc/chroma\nkeys=no\nif [ \"$ENGINE\" = vecturadb ] && [ -n \"${API_KEY:-}\" ]; then\n  # The credentials file of VecturaDB, in the format of Chroma 0.5. YAML single quotes keep the key as it is.\n  quoted=$(printf %s \"$API_KEY\" | sed \"s/'/''/g\")\n  (umask 077; printf \"users:\\n  - id: admin\\n    tokens:\\n      - '%s'\\n\" \"$quoted\" > /etc/chroma/credentials.yaml)\n  keys=yes\nelse\n  rm -f /etc/chroma/credentials.yaml\nfi\n\n# Internal: the server answers on the private address, port 8000. Otherwise only Caddy reaches it, on 127.0.0.1.\nif [ \"$ACCESS\" = internal ]; then publish=8000:8000; else publish=127.0.0.1:8000:8000; fi\n\ndocker pull -q \"$IMAGE\"\nif docker inspect chroma >/dev/null 2>&1; then\n  docker stop -t 30 chroma\n  docker rm chroma\nfi\nif [ \"$keys\" = yes ]; then\n  docker run -d --name chroma --restart unless-stopped -p \"$publish\" -v /var/lib/chroma:/data \\\n    -v /etc/chroma/credentials.yaml:/credentials/credentials.yaml:ro \\\n    -e CHROMA_SERVER_AUTHN_CREDENTIALS_FILE=/credentials/credentials.yaml \"$IMAGE\"\nelse\n  docker run -d --name chroma --restart unless-stopped -p \"$publish\" -v /var/lib/chroma:/data \"$IMAGE\"\nfi\nready=no\nfor i in $(seq 1 90); do\n  if curl -sf -o /dev/null http://127.0.0.1:8000/api/v2/heartbeat; then ready=yes; break; fi\n  sleep 2\ndone\n[ \"$ready\" = yes ] || { docker logs --tail 50 chroma; echo \"the server did not answer\"; exit 1; }\n\nif [ \"$ACCESS\" = internal ]; then\n  systemctl disable --now caddy || true\nelse\n  {\n    if [ -n \"${ACME_EMAIL:-}\" ]; then printf '{\\n\\temail %s\\n}\\n\\n' \"$ACME_EMAIL\"; fi\n    # Port 80 only answers the HTTP-01 challenge of the certificate, which Caddy handles before this block.\n    printf 'http://%s {\\n\\tabort\\n}\\n\\n' \"$HOST\"\n    printf '%s {\\n' \"$HOST\"\n    if [ \"$ACCESS\" = allowed-ips ]; then\n      printf '\\t@denied not remote_ip %s\\n\\tabort @denied\\n' \"$ALLOWED_IPS\"\n    fi\n    printf '\\treverse_proxy 127.0.0.1:8000\\n}\\n'\n  } > /etc/caddy/Caddyfile\n  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile\n  systemctl enable caddy\n  systemctl reload-or-restart caddy\n  # The deployment ends only once Caddy holds the certificate: right after the reload, HTTPS is not ready yet.\n  cert=no\n  for i in $(seq 1 90); do\n    if ls /var/lib/caddy/.local/share/caddy/certificates/*/\"$HOST\"/\"$HOST\".crt >/dev/null 2>&1; then cert=yes; break; fi\n    sleep 2\n  done\n  [ \"$cert\" = yes ] || { journalctl -u caddy --no-pager | tail -n 20; echo \"no HTTPS certificate for $HOST after 180 s\"; exit 1; }\nfi\ndocker ps --filter name=chroma --format 'chroma: {{.Image}} {{.Status}}'\ncaddy version || true\n",
+    "checks": [
+      "[if(and(equals(parameters('access'), 'public'), or(not(equals(parameters('engine'), 'vecturadb')), empty(parameters('apiKey')))), fail('access public needs engine vecturadb and an apiKey: Chroma 1.5.9 has no API keys.'), 'ok')]",
+      "[if(and(equals(parameters('access'), 'allowed-ips'), empty(parameters('allowedIpRanges'))), fail('access allowed-ips needs at least one range in allowedIpRanges.'), 'ok')]"
+    ],
+    "suffix": "[uniqueString(resourceGroup().id, parameters('name'))]",
+    "image": "[if(equals(parameters('engine'), 'chroma'), parameters('chromaImage'), parameters('vecturadbImage'))]",
+    "sizeName": "[toLower(split(parameters('vmSize'), '_')[1])]",
+    "architecture": "[if(not(equals(parameters('cpuArchitecture'), 'auto')), parameters('cpuArchitecture'), if(contains(substring(variables('sizeName'), 2), 'p'), 'arm64', 'x64'))]",
+    "isPublic": "[not(equals(parameters('access'), 'internal'))]",
+    "diskBackupReader": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '3e5e47e6-65f7-47ef-90b5-e5dd4d455f24')]",
+    "diskSnapshotContributor": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7efff54f-a5b4-42b5-a1c5-5411624893ce')]",
+    "diskRestoreOperator": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b50d9833-a0cb-478e-945f-707fcc997c13')]"
+  },
+  "resources": {
+    "nsg": {
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}-nsg', parameters('name'))]",
+      "location": "[parameters('location')]",
+      "tags": {
+        "parameter-checks": "[join(variables('checks'), ' ')]"
+      },
+      "properties": {
+        "securityRules": "[if(equals(parameters('access'), 'internal'), createArray(), createArray(createObject('name', 'certificate-challenge', 'properties', createObject('priority', 100, 'direction', 'Inbound', 'access', 'Allow', 'protocol', 'Tcp', 'sourceAddressPrefix', 'Internet', 'sourcePortRange', '*', 'destinationAddressPrefix', '*', 'destinationPortRange', '80')), createObject('name', 'https', 'properties', union(createObject('priority', 110, 'direction', 'Inbound', 'access', 'Allow', 'protocol', 'Tcp', 'sourcePortRange', '*', 'destinationAddressPrefix', '*', 'destinationPortRange', '443'), if(equals(parameters('access'), 'public'), createObject('sourceAddressPrefix', 'Internet'), createObject('sourceAddressPrefixes', parameters('allowedIpRanges')))))))]"
+      }
+    },
+    "vnet": {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}-vnet', parameters('name'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "10.42.0.0/16"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "vm",
+            "properties": {
+              "addressPrefix": "10.42.0.0/24",
+              "defaultOutboundAccess": true
+            }
+          }
+        ]
+      }
+    },
+    "publicIp": {
+      "condition": "[variables('isPublic')]",
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}-ip', parameters('name'))]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Standard"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Static",
+        "dnsSettings": {
+          "domainNameLabel": "[format('{0}-{1}', parameters('name'), take(variables('suffix'), 6))]"
+        }
+      }
+    },
+    "nic": {
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}-nic', parameters('name'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "networkSecurityGroup": {
+          "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-nsg', parameters('name')))]"
+        },
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": "[union(createObject('subnet', createObject('id', reference('vnet').subnets[0].id), 'privateIPAllocationMethod', 'Dynamic'), if(variables('isPublic'), createObject('publicIPAddress', createObject('id', resourceId('Microsoft.Network/publicIPAddresses', format('{0}-ip', parameters('name'))))), createObject()))]"
+          }
+        ]
+      },
+      "dependsOn": [
+        "nsg",
+        "publicIp",
+        "vnet"
+      ]
+    },
+    "dataDisk": {
+      "type": "Microsoft.Compute/disks",
+      "apiVersion": "2024-03-02",
+      "name": "[format('{0}-data', parameters('name'))]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "StandardSSD_LRS"
+      },
+      "properties": {
+        "creationData": {
+          "createOption": "Empty"
+        },
+        "diskSizeGB": "[parameters('dataDiskSizeGB')]"
+      }
+    },
+    "vm": {
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2024-07-01",
+      "name": "[parameters('name')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[parameters('vmSize')]"
+        },
+        "osProfile": {
+          "computerName": "[parameters('name')]",
+          "adminUsername": "[parameters('adminUsername')]",
+          "customData": "[base64(variables('$fxv#0'))]",
+          "linuxConfiguration": {
+            "disablePasswordAuthentication": true,
+            "ssh": {
+              "publicKeys": [
+                {
+                  "path": "[format('/home/{0}/.ssh/authorized_keys', parameters('adminUsername'))]",
+                  "keyData": "[parameters('adminPublicKey')]"
+                }
+              ]
+            }
+          }
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "Canonical",
+            "offer": "ubuntu-24_04-lts",
+            "sku": "[if(equals(variables('architecture'), 'arm64'), 'server-arm64', 'server')]",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "FromImage",
+            "deleteOption": "Delete",
+            "managedDisk": {
+              "storageAccountType": "StandardSSD_LRS"
+            }
+          },
+          "dataDisks": [
+            {
+              "lun": 0,
+              "createOption": "Attach",
+              "caching": "ReadOnly",
+              "deleteOption": "Detach",
+              "managedDisk": {
+                "id": "[resourceId('Microsoft.Compute/disks', format('{0}-data', parameters('name')))]"
+              }
+            }
+          ]
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', format('{0}-nic', parameters('name')))]",
+              "properties": {
+                "deleteOption": "Delete"
+              }
+            }
+          ]
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": true
+          }
+        }
+      },
+      "dependsOn": [
+        "dataDisk",
+        "nic"
+      ]
+    },
+    "configure": {
+      "type": "Microsoft.Compute/virtualMachines/runCommands",
+      "apiVersion": "2024-07-01",
+      "name": "[format('{0}/{1}', parameters('name'), 'configure')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "source": {
+          "script": "[variables('$fxv#1')]"
+        },
+        "parameters": [
+          {
+            "name": "ENGINE",
+            "value": "[parameters('engine')]"
+          },
+          {
+            "name": "IMAGE",
+            "value": "[variables('image')]"
+          },
+          {
+            "name": "ACCESS",
+            "value": "[parameters('access')]"
+          },
+          {
+            "name": "HOST",
+            "value": "[if(variables('isPublic'), if(empty(parameters('domainName')), reference('publicIp').dnsSettings.fqdn, parameters('domainName')), '')]"
+          },
+          {
+            "name": "ALLOWED_IPS",
+            "value": "[join(parameters('allowedIpRanges'), ' ')]"
+          },
+          {
+            "name": "ACME_EMAIL",
+            "value": "[parameters('acmeEmail')]"
+          },
+          {
+            "name": "DEPLOYED_AT",
+            "value": "[parameters('deployedAt')]"
+          }
+        ],
+        "protectedParameters": [
+          {
+            "name": "API_KEY",
+            "value": "[parameters('apiKey')]"
+          }
+        ],
+        "timeoutInSeconds": 1800,
+        "treatFailureAsDeploymentFailure": true
+      },
+      "dependsOn": [
+        "publicIp",
+        "vm"
+      ]
+    },
+    "vault": {
+      "condition": "[equals(parameters('backup'), 'disk')]",
+      "type": "Microsoft.DataProtection/backupVaults",
+      "apiVersion": "2024-04-01",
+      "name": "[format('{0}-backup', parameters('name'))]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "storageSettings": [
+          {
+            "datastoreType": "OperationalStore",
+            "type": "LocallyRedundant"
+          }
+        ],
+        "securitySettings": {
+          "softDeleteSettings": {
+            "state": "[parameters('backupSoftDelete')]",
+            "retentionDurationInDays": 14
+          },
+          "immutabilitySettings": {
+            "state": "Disabled"
+          }
+        }
+      }
+    },
+    "policy": {
+      "condition": "[equals(parameters('backup'), 'disk')]",
+      "type": "Microsoft.DataProtection/backupVaults/backupPolicies",
+      "apiVersion": "2024-04-01",
+      "name": "[format('{0}/{1}', format('{0}-backup', parameters('name')), 'data-disk')]",
+      "properties": {
+        "objectType": "BackupPolicy",
+        "datasourceTypes": [
+          "Microsoft.Compute/disks"
+        ],
+        "policyRules": [
+          {
+            "name": "Backup",
+            "objectType": "AzureBackupRule",
+            "backupParameters": {
+              "objectType": "AzureBackupParams",
+              "backupType": "Incremental"
+            },
+            "dataStore": {
+              "objectType": "DataStoreInfoBase",
+              "dataStoreType": "OperationalStore"
+            },
+            "trigger": {
+              "objectType": "ScheduleBasedTriggerContext",
+              "schedule": {
+                "repeatingTimeIntervals": [
+                  "[format('R/2026-01-01T02:00:00+00:00/PT{0}H', parameters('backupEveryHours'))]"
+                ],
+                "timeZone": "UTC"
+              },
+              "taggingCriteria": [
+                {
+                  "isDefault": true,
+                  "taggingPriority": 99,
+                  "tagInfo": {
+                    "tagName": "Default"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "Default",
+            "objectType": "AzureRetentionRule",
+            "isDefault": true,
+            "lifecycles": [
+              {
+                "deleteAfter": {
+                  "objectType": "AbsoluteDeleteOption",
+                  "duration": "[format('P{0}D', parameters('backupRetentionDays'))]"
+                },
+                "sourceDataStore": {
+                  "objectType": "DataStoreInfoBase",
+                  "dataStoreType": "OperationalStore"
+                },
+                "targetDataStoreCopySettings": []
+              }
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        "vault"
+      ]
+    },
+    "readDisk": {
+      "condition": "[equals(parameters('backup'), 'disk')]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Compute/disks', format('{0}-data', parameters('name')))]",
+      "name": "[guid(resourceId('Microsoft.Compute/disks', format('{0}-data', parameters('name'))), 'disk-backup-reader', parameters('name'))]",
+      "properties": {
+        "roleDefinitionId": "[variables('diskBackupReader')]",
+        "principalId": "[reference('vault', '2024-04-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "dataDisk",
+        "vault"
+      ]
+    },
+    "writeSnapshots": {
+      "condition": "[equals(parameters('backup'), 'disk')]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceGroup().id, 'disk-snapshot-contributor', parameters('name'))]",
+      "properties": {
+        "roleDefinitionId": "[variables('diskSnapshotContributor')]",
+        "principalId": "[reference('vault', '2024-04-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "vault"
+      ]
+    },
+    "restoreDisks": {
+      "condition": "[equals(parameters('backup'), 'disk')]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceGroup().id, 'disk-restore-operator', parameters('name'))]",
+      "properties": {
+        "roleDefinitionId": "[variables('diskRestoreOperator')]",
+        "principalId": "[reference('vault', '2024-04-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "vault"
+      ]
+    },
+    "protectDisk": {
+      "condition": "[equals(parameters('backup'), 'disk')]",
+      "type": "Microsoft.DataProtection/backupVaults/backupInstances",
+      "apiVersion": "2024-04-01",
+      "name": "[format('{0}/{1}', format('{0}-backup', parameters('name')), format('{0}-data', parameters('name')))]",
+      "properties": {
+        "objectType": "BackupInstance",
+        "dataSourceInfo": {
+          "objectType": "Datasource",
+          "datasourceType": "Microsoft.Compute/disks",
+          "resourceID": "[resourceId('Microsoft.Compute/disks', format('{0}-data', parameters('name')))]",
+          "resourceLocation": "[parameters('location')]",
+          "resourceName": "[format('{0}-data', parameters('name'))]",
+          "resourceType": "Microsoft.Compute/disks",
+          "resourceUri": "[resourceId('Microsoft.Compute/disks', format('{0}-data', parameters('name')))]"
+        },
+        "policyInfo": {
+          "policyId": "[resourceId('Microsoft.DataProtection/backupVaults/backupPolicies', format('{0}-backup', parameters('name')), 'data-disk')]",
+          "policyParameters": {
+            "dataStoreParametersList": [
+              {
+                "objectType": "AzureOperationalStoreParameters",
+                "dataStoreType": "OperationalStore",
+                "resourceGroupId": "[resourceGroup().id]"
+              }
+            ]
+          }
+        }
+      },
+      "dependsOn": [
+        "dataDisk",
+        "policy",
+        "readDisk",
+        "vault",
+        "writeSnapshots"
+      ]
+    }
+  },
+  "outputs": {
+    "url": {
+      "type": "string",
+      "metadata": {
+        "description": "Address for the clients."
+      },
+      "value": "[if(variables('isPublic'), format('https://{0}', if(empty(parameters('domainName')), reference('publicIp').dnsSettings.fqdn, parameters('domainName'))), format('http://{0}:8000', reference('nic').ipConfigurations[0].properties.privateIPAddress))]"
+    },
+    "publicIp": {
+      "type": "string",
+      "metadata": {
+        "description": "Public IP of the VM; with your own domain name, its DNS A record points here."
+      },
+      "value": "[if(variables('isPublic'), reference('publicIp').ipAddress, '')]"
+    },
+    "privateIp": {
+      "type": "string",
+      "value": "[reference('nic').ipConfigurations[0].properties.privateIPAddress]"
+    },
+    "engine": {
+      "type": "string",
+      "value": "[parameters('engine')]"
+    },
+    "image": {
+      "type": "string",
+      "value": "[variables('image')]"
+    },
+    "architecture": {
+      "type": "string",
+      "metadata": {
+        "description": "CPU architecture of the VM image."
+      },
+      "value": "[variables('architecture')]"
+    }
+  }
+}
