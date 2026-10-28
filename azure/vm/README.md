@@ -182,15 +182,9 @@ In a few regions Azure enforces soft delete for backup vaults, and it cannot be 
 - A new deployment restarts the server even when nothing changes.
 - If you attach a disk by hand at LUN 0, use `--caching ReadOnly`, as the template does: a later deployment would otherwise change the caching, and Azure would detach and attach the disk while the VM runs.
 
-## Why not Container Apps
+## Container Apps, for a few hours of use a day
 
-We measured Azure Container Apps with the data on Azure Files, as a cheaper option with scale to zero, and set it aside for data that must persist:
-
-- During a change of revision, the old and the new revision run at the same time, on the same files. Chroma does not lock its files.
-- With a lock in front of the server, the new revision waited for the old one: it failed after 5 minutes, until we stopped the old revision by hand. No data was lost, but every update needed a manual step.
-- Chroma 1.5.9 did not start on an SMB share mounted as Container Apps mounts it.
-- On an NFS share (Premium), the same operations took 15 to 230 times longer than on this VM, measured from the same client: 309 ms for a query against 2.6 ms, 964 ms for a get against 4.2 ms, 1.6 s for an add against 104 ms.
-- A start from zero took 26-30 seconds.
+The [Container Apps template](../container-apps/) runs Chroma 1.5.9 on Azure Container Apps, with the data on an Azure Files share. It scales to zero when nobody uses it, so it costs almost nothing on the days it is idle. It also has limits that this VM does not have: an update made while the app is in use needs a manual step, the first request after scaling to zero waited 26-32 seconds in our tests, reads and writes are slower, and there are no backups and no API keys. See [its limits](../container-apps/#limits).
 
 ## License and trademarks
 
