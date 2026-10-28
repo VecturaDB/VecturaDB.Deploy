@@ -1,6 +1,6 @@
 # Chroma on Azure Container Apps
 
-> **Disclaimer.** This template and its scripts are provided as is, without warranty of any kind, as stated in the Apache License 2.0. The numbers below are what we measured on 25, 26 and 27 October 2026 in westeurope: your region, data and versions may behave differently. You are responsible for your data: back it up, and test a restore on a copy before you rely on it. Not sure about your case? Open an issue in this repository and we will take a look on a best-effort basis.
+> **Disclaimer.** This template and its scripts are provided as is, without warranty of any kind, as stated in the Apache License 2.0. The numbers below are what we measured on 25, 26, 27 and 28 October 2026 in westeurope: your region, data and versions may behave differently. You are responsible for your data: back it up, and test a restore on a copy before you rely on it. Not sure about your case? Open an issue in this repository and we will take a look on a best-effort basis.
 
 The template runs **Chroma 1.5.9** (`ghcr.io/chroma-core/chroma:1.5.9`) on Azure Container Apps, with the data on an Azure Files SMB share. The app scales to zero when nobody uses it, so it costs almost nothing on the days it is idle.
 
