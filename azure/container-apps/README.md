@@ -58,7 +58,7 @@ az deployment group create -g my-chroma \
   -p allowedIpRanges='["203.0.113.10/32"]'
 ```
 
-The `url` output is the address for the clients, over HTTPS. In our tests a deployment from zero took 15-17 minutes (881-1002 seconds), most of it for the environment.
+The `url` output is the address for the clients, over HTTPS. In our tests a deployment from zero took 15-18 minutes (881-1067 seconds), most of it for the environment.
 
 ## Update
 
@@ -109,7 +109,7 @@ Not in the table:
 
 ## Delete everything
 
-There is no backup vault here: deleting the resource group deletes the whole deployment. In our tests it took 27 minutes (1632 seconds), most of it for the Container Apps environment.
+There is no backup vault here: deleting the resource group deletes the whole deployment. In our tests it took 27-30 minutes (1632-1810 seconds), most of it for the Container Apps environment.
 
 In the portal, open the resource group and select Delete resource group. Type the name of the group, select Delete, then Delete again to confirm.
 
