@@ -11,6 +11,7 @@ The template runs **Chroma 1.5.9** (`ghcr.io/chroma-core/chroma:1.5.9`) on Azure
 Read them before you deploy:
 
 - **An update made while the app is in use needs a manual step.** During a change of revision, Container Apps keeps the old revision running until the new one is ready, and both would work on the same files. A lock file in front of the server stops that: the new revision waits until you deactivate the old one (see [Update](#update)). An update made while the app has scaled to zero needs no manual step.
+- **A lock can outlive its replica.** If the host of the replica disappears, the share keeps the lock for about 11 minutes (655 seconds in our tests), and the next replica waits for it. See [A lock left by a lost replica](#a-lock-left-by-a-lost-replica).
 - **Scale to zero, and a slow first request.** About 10 minutes after the last request (582-613 seconds in our tests) the app has no replica left. The next request starts one: in our tests it waited 26-32 seconds. Set the timeout of your client above that.
 - **One replica at most**: no horizontal scale.
 - **Slower than the VM.** The data sits on a network share. Medians from a client in the same region, in milliseconds:
@@ -72,6 +73,22 @@ In our tests the old revision kept serving while the new one waited. After the d
 
 - Deactivate the old revision within 5 minutes. After 5 minutes of waiting the new revision shows Failed; in our tests it started anyway once the old one was deactivated, 22 seconds later.
 - An update made while the app has no replica (about 10 minutes after the last request) needs no manual step: nothing holds the lock. In our tests the new revision started at once, the old one went away by itself, and the data was all there.
+
+## A lock left by a lost replica
+
+When the host of the replica disappears without closing its files, Azure Files keeps the lock on the lock file until it gives up on that host: in our tests 655 seconds, about 11 minutes, after the host was switched off. Until then the next replica waits, and the server does not answer.
+
+To free the lock earlier, close only the handle of the lost replica:
+
+```sh
+ACCOUNT=$(az storage account list -g my-chroma --query "[0].name" -o tsv)
+KEY=$(az storage account keys list -g my-chroma -n $ACCOUNT --query "[0].value" -o tsv)
+az storage share list-handle --account-name $ACCOUNT --account-key $KEY --name data --path .lock -o table
+az storage share close-handle --account-name $ACCOUNT --account-key $KEY --name data --path .lock \
+  --handle-id <the handle of the lost replica>
+```
+
+The list shows a handle for each replica that opened the file, with its client IP and the time it was opened: the lost replica is the older one. Never use `--close-all`: in our tests it also closed the handle of the process that was waiting, which then failed with an input/output error.
 
 ## Cost
 
