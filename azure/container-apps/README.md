@@ -45,16 +45,16 @@ The server reaches the share through two mounts:
 
 ## Deploy
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.1.0%2Fazure%2Fcontainer-apps%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.1.0%2Fazure%2Fcontainer-apps%2FcreateUiDefinition.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.1.1%2Fazure%2Fcontainer-apps%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.1.1%2Fazure%2Fcontainer-apps%2FcreateUiDefinition.json)
 
-The button opens the form of the Azure portal, with the template of the tag `azure-v1.1.0`. When the portal shows "Your deployment is complete", open **Outputs** in the menu on the left: `url` is the address of the server, for the clients.
+The button opens the form of the Azure portal, with the template of the tag `azure-v1.1.1`. When the portal shows "Your deployment is complete", open **Outputs** in the menu on the left: `url` is the address of the server, for the clients.
 
 With the Azure CLI:
 
 ```sh
 az group create -n my-chroma -l westeurope
 az deployment group create -g my-chroma \
-  --template-uri https://raw.githubusercontent.com/VecturaDB/VecturaDB.Deploy/azure-v1.1.0/azure/container-apps/azuredeploy.json \
+  --template-uri https://raw.githubusercontent.com/VecturaDB/VecturaDB.Deploy/azure-v1.1.1/azure/container-apps/azuredeploy.json \
   -p allowedIpRanges='["203.0.113.10/32"]'
 ```
 
