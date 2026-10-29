@@ -1,0 +1,736 @@
+AWSTemplateFormatVersion: '2010-09-09'
+# AWS::LanguageExtensions gives Fn::ForEach: one security group rule for each allowed IP range.
+Transform: AWS::LanguageExtensions
+Description: Chroma or VecturaDB on one EC2 instance with Docker, the data on an EBS volume.
+
+# One process on the data at a time: at every update the old container stops before the new one starts.
+# The launch template names Ubuntu 24.04 through a public SSM parameter, which EC2 resolves when it launches the
+# instance. A stack update never sees a newer image, so it never replaces the instance that holds the data volume.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Server
+        Parameters:
+          - Engine
+          - ChromaImage
+          - VecturaDBImage
+          - InstanceType
+          - DataVolumeSizeGB
+      - Label:
+          default: Access
+        Parameters:
+          - Access
+          - AllowedIpRanges
+          - ApiKey
+          - DomainName
+          - AcmeEmail
+      - Label:
+          default: Backups
+        Parameters:
+          - Backup
+          - BackupEveryHours
+          - BackupRetentionDays
+
+Parameters:
+  Engine:
+    Type: String
+    Default: chroma
+    AllowedValues:
+      - chroma
+      - vecturadb
+    Description: 'The server: chroma (Chroma 1.5.9) or vecturadb (VecturaDB, built from Chroma, with sparse vectors, BM25, the Search API, collection fork and API keys).'
+  ChromaImage:
+    Type: String
+    Default: ghcr.io/chroma-core/chroma:1.5.9
+    AllowedPattern: '^[a-zA-Z0-9][a-zA-Z0-9./:@_-]*$'
+    Description: Image of Chroma. The same image is on Docker Hub as chromadb/chroma.
+  VecturaDBImage:
+    Type: String
+    Default: ghcr.io/vecturadb/vecturadb:1.0.0-preview.3.post1
+    AllowedPattern: '^[a-zA-Z0-9][a-zA-Z0-9./:@_-]*$'
+    Description: Image of VecturaDB.
+  InstanceType:
+    Type: String
+    Default: t4g.micro
+    AllowedValues:
+      - t4g.micro
+      - t4g.small
+      - t4g.medium
+      - t3.micro
+      - t3.small
+      - t3.medium
+    Description: 'Instance type: t4g are Arm (Graviton), t3 are x86. A change between the two needs a new stack, because the image of the operating system changes.'
+  Access:
+    Type: String
+    Default: internal
+    AllowedValues:
+      - internal
+      - allowed-ips
+      - public
+    Description: 'Who reaches the server: internal (only the VPC of this stack, HTTP on the private address, port 8000), allowed-ips (HTTPS from the allowed IP ranges), or public (HTTPS from anywhere, VecturaDB with an API key only).'
+  AllowedIpRanges:
+    Type: CommaDelimitedList
+    Default: ''
+    Description: 'IP ranges in CIDR notation, separated by commas, that may reach the server over HTTPS when Access is allowed-ips. Example: 203.0.113.10/32'
+  ApiKey:
+    Type: String
+    Default: ''
+    NoEcho: true
+    AllowedPattern: '^\S*$'
+    Description: 'VecturaDB only: the API key of the admin user. Every request then needs it, in the x-chroma-token header. Required when Access is public. The stack keeps it in AWS Secrets Manager.'
+  DomainName:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$'
+    Description: 'Your own domain name for HTTPS, like chroma.example.com, with a DNS A record to the public IP (output PublicIp). Empty: a certificate for the public IP itself.'
+  AcmeEmail:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+$'
+    Description: Email for the account of the HTTPS certificate at Let's Encrypt. Optional.
+  DataVolumeSizeGB:
+    Type: Number
+    Default: 16
+    MinValue: 4
+    MaxValue: 16384
+    Description: Size of the data volume in GiB (gp3).
+  Backup:
+    Type: String
+    Default: snapshots
+    AllowedValues:
+      - snapshots
+      - none
+    Description: 'Backups of the data volume: snapshots (EBS snapshots taken by Amazon Data Lifecycle Manager) or none.'
+  BackupEveryHours:
+    Type: Number
+    Default: 24
+    AllowedValues:
+      - 4
+      - 6
+      - 8
+      - 12
+      - 24
+    Description: Hours between two snapshots of the data volume.
+  BackupRetentionDays:
+    Type: Number
+    Default: 7
+    MinValue: 1
+    MaxValue: 360
+    Description: Days a snapshot is kept.
+
+# The checks of the parameters stop the stack before any resource is created.
+Rules:
+  PublicNeedsVecturaDBWithKey:
+    RuleCondition: !Equals [!Ref Access, public]
+    Assertions:
+      - Assert: !And
+          - !Equals [!Ref Engine, vecturadb]
+          - !Not [!Equals [!Ref ApiKey, '']]
+        AssertDescription: 'Access public needs Engine vecturadb and an ApiKey: Chroma 1.5.9 has no API keys.'
+  AllowedIpsNeedRanges:
+    RuleCondition: !Equals [!Ref Access, allowed-ips]
+    Assertions:
+      - Assert: !Not [!Contains [!Ref AllowedIpRanges, '']]
+        AssertDescription: Access allowed-ips needs at least one range in AllowedIpRanges.
+
+Conditions:
+  IsArm: !Or
+    - !Equals [!Ref InstanceType, t4g.micro]
+    - !Equals [!Ref InstanceType, t4g.small]
+    - !Equals [!Ref InstanceType, t4g.medium]
+  IsChroma: !Equals [!Ref Engine, chroma]
+  IsInternal: !Equals [!Ref Access, internal]
+  IsAllowedIps: !Equals [!Ref Access, allowed-ips]
+  IsPublic: !Equals [!Ref Access, public]
+  HasDomain: !Not [!Equals [!Ref DomainName, '']]
+  HasApiKey: !And
+    - !Equals [!Ref Engine, vecturadb]
+    - !Not [!Equals [!Ref ApiKey, '']]
+  HasBackup: !Equals [!Ref Backup, snapshots]
+
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.42.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  Subnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.42.0.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet
+      RouteTableId: !Ref RouteTable
+
+  # Port 80 is open only for the HTTP-01 challenge of the certificate: Caddy answers nothing else on it.
+  # Port 443 is open to the allowed ranges, or to anyone when access is public. Port 22 stays closed, and port 8000
+  # is open only inside the VPC, when access is internal.
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Chroma or VecturaDB
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - !If
+          - IsInternal
+          - IpProtocol: tcp
+            FromPort: 8000
+            ToPort: 8000
+            CidrIp: 10.42.0.0/16
+            Description: The server, inside the VPC
+          - IpProtocol: tcp
+            FromPort: 80
+            ToPort: 80
+            CidrIp: 0.0.0.0/0
+            Description: Only the HTTP-01 challenge of the certificate
+        - !If
+          - IsPublic
+          - IpProtocol: tcp
+            FromPort: 443
+            ToPort: 443
+            CidrIp: 0.0.0.0/0
+            Description: HTTPS from anywhere
+          - !Ref AWS::NoValue
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+
+  Fn::ForEach::AllowedRanges:
+    - Range
+    - !Ref AllowedIpRanges
+    - HttpsFrom&{Range}:
+        Type: AWS::EC2::SecurityGroupIngress
+        Condition: IsAllowedIps
+        # Without ranges the condition is false: the rule AllowedIpsNeedRanges stops access allowed-ips with none.
+        Metadata:
+          cfn-lint:
+            config:
+              ignore_checks:
+                - W1035
+        Properties:
+          GroupId: !Ref SecurityGroup
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref Range
+          Description: HTTPS from an allowed range
+
+  NetworkInterface:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      SubnetId: !Ref Subnet
+      GroupSet:
+        - !Ref SecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+
+  # Also with internal access: without a NAT gateway, the public IP is the way out to the package and image registries.
+  PublicIp:
+    Type: AWS::EC2::EIP
+    DependsOn: GatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+
+  # The address is on the network interface before the instance starts, so the first boot already reaches the internet.
+  PublicIpAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt PublicIp.AllocationId
+      NetworkInterfaceId: !Ref NetworkInterface
+
+  ApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: HasApiKey
+    Properties:
+      Description: !Sub API key of the admin user of VecturaDB, stack ${AWS::StackName}
+      SecretString: !Ref ApiKey
+
+  # Systems Manager runs the configuration at every update and the restore: there is no SSH.
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies: !If
+        - HasApiKey
+        - - PolicyName: read-api-key
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action: secretsmanager:GetSecretValue
+                  Resource: !Ref ApiKeySecret
+        - !Ref AWS::NoValue
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+
+  DataVolume:
+    Type: AWS::EC2::Volume
+    Properties:
+      AvailabilityZone: !GetAtt Subnet.AvailabilityZone
+      Size: !Ref DataVolumeSizeGB
+      VolumeType: gp3
+      Encrypted: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-data
+        - Key: chroma-backup
+          Value: !Ref AWS::StackName
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !If
+          - IsArm
+          - resolve:ssm:/aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id
+          - resolve:ssm:/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id
+        MetadataOptions:
+          HttpEndpoint: enabled
+          HttpTokens: required
+
+  Instance:
+    Type: AWS::EC2::Instance
+    DependsOn: PublicIpAssociation
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      InstanceType: !Ref InstanceType
+      # Standard credits, as the B-series of Azure: without credits the CPU stays at the baseline, and nothing is billed
+      # beyond the price of the instance. Otherwise t4g and t3 start in unlimited mode, which bills the CPU above it.
+      CreditSpecification:
+        CPUCredits: standard
+      IamInstanceProfile: !Ref InstanceProfile
+      NetworkInterfaces:
+        - DeviceIndex: '0'
+          NetworkInterfaceId: !Ref NetworkInterface
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: gp3
+            Encrypted: true
+            DeleteOnTermination: true
+      # Attached with the instance and detached by its termination: never detached while it is mounted.
+      Volumes:
+        - Device: /dev/sdf
+          VolumeId: !Ref DataVolume
+      # The first boot only: the server itself is set up by ConfigureDocument, at the creation and at every update.
+      UserData:
+        Fn::Base64:
+          Fn::Join:
+            - ''
+            - - "#!/bin/bash\n"
+              - !Sub "DATA_VOLUME=${DataVolume}\n"
+              - |
+                # First boot of the instance: the data volume, Docker, Caddy and the AWS CLI.
+                set -eux
+                export DEBIAN_FRONTEND=noninteractive
+
+                # The data volume: formatted once, mounted at /var/lib/chroma. On Nitro instances an EBS volume is an
+                # NVMe disk, named after the volume ID without the hyphen.
+                disk=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${DATA_VOLUME/-/}
+                for i in $(seq 1 90); do
+                  [ -e "$disk" ] && break
+                  sleep 2
+                done
+                [ -e "$disk" ] || { echo "no data volume $DATA_VOLUME"; exit 1; }
+                blkid "$disk" >/dev/null 2>&1 || mkfs.ext4 -q -L chroma-data "$disk"
+                mkdir -p /var/lib/chroma
+                grep -q 'LABEL=chroma-data' /etc/fstab || echo 'LABEL=chroma-data /var/lib/chroma ext4 defaults,nofail 0 2' >> /etc/fstab
+                mount -a
+                mountpoint -q /var/lib/chroma
+
+                # Docker, with bounded logs.
+                mkdir -p /etc/docker
+                cat > /etc/docker/daemon.json <<'EOF'
+                {"log-driver": "json-file", "log-opts": {"max-size": "10m", "max-file": "3"}}
+                EOF
+                apt-get update -q
+                apt-get install -y -q docker.io curl gnupg debian-keyring debian-archive-keyring apt-transport-https
+                systemctl enable --now docker
+
+                # Caddy from its official apt repository, which is signed. Ubuntu 24.04 has an older Caddy in universe.
+                curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+                curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt > /etc/apt/sources.list.d/caddy-stable.list
+                apt-get update -q
+                apt-get install -y -q caddy
+                systemctl disable --now caddy
+
+                # The AWS CLI, which reads the API key of VecturaDB from Secrets Manager.
+                snap install aws-cli --classic
+
+                touch /var/lib/chroma-first-boot-done
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+
+  ConfigureDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Command
+      Content:
+        schemaVersion: '2.2'
+        description: Starts the server with the image and the settings of the stack.
+        parameters:
+          engine:
+            type: String
+            allowedPattern: '^(chroma|vecturadb)$'
+          image:
+            type: String
+            allowedPattern: '^[a-zA-Z0-9][a-zA-Z0-9./:@_-]*$'
+          access:
+            type: String
+            allowedPattern: '^(internal|allowed-ips|public)$'
+          host:
+            type: String
+            default: ''
+            allowedPattern: '^[a-zA-Z0-9.-]*$'
+          allowedIps:
+            type: String
+            default: ''
+            allowedPattern: '^[0-9./ ]*$'
+          acmeEmail:
+            type: String
+            default: ''
+            allowedPattern: '^[a-zA-Z0-9._%+@-]*$'
+          apiKeySecret:
+            type: String
+            default: ''
+            allowedPattern: '^[a-zA-Z0-9:/_+=.@-]*$'
+          region:
+            type: String
+            allowedPattern: '^[a-z0-9-]+$'
+        mainSteps:
+          - action: aws:runShellScript
+            name: configure
+            inputs:
+              timeoutSeconds: '1800'
+              runCommand:
+                - |
+                  ENGINE='{{ engine }}'
+                  IMAGE='{{ image }}'
+                  ACCESS='{{ access }}'
+                  HOST='{{ host }}'
+                  ALLOWED_IPS='{{ allowedIps }}'
+                  ACME_EMAIL='{{ acmeEmail }}'
+                  API_KEY_SECRET='{{ apiKeySecret }}'
+                  REGION='{{ region }}'
+                  # Runs at the creation of the stack and at every update that changes these settings: starts the server
+                  # with the image and the settings of the stack. The old container stops before the new one starts, so
+                  # one process at a time works on /var/lib/chroma. POSIX sh, whatever shell runs it.
+                  set -eu
+                  cloud-init status --wait >/dev/null || true
+                  [ -e /var/lib/chroma-first-boot-done ] || { echo "the first boot did not finish: see /var/log/cloud-init-output.log"; exit 1; }
+                  mountpoint -q /var/lib/chroma || { echo "the data volume is not mounted at /var/lib/chroma"; exit 1; }
+
+                  # Docker starts only once the data volume is mounted. The fstab line has nofail, which does not hold
+                  # back the services: an instance that boots without the volume would otherwise serve an empty database
+                  # from the root volume.
+                  mkdir -p /etc/systemd/system/docker.service.d
+                  printf '[Unit]\nRequiresMountsFor=/var/lib/chroma\n' > /etc/systemd/system/docker.service.d/chroma-data.conf
+                  systemctl daemon-reload
+
+                  mkdir -p /etc/chroma
+                  keys=no
+                  if [ "$ENGINE" = vecturadb ] && [ -n "$API_KEY_SECRET" ]; then
+                    # The key stays in Secrets Manager. The credentials file of VecturaDB, in the format of Chroma 0.5,
+                    # is readable by root only; YAML single quotes keep the key as it is.
+                    API_KEY=$(/snap/bin/aws secretsmanager get-secret-value --region "$REGION" --secret-id "$API_KEY_SECRET" --query SecretString --output text)
+                    quoted=$(printf %s "$API_KEY" | sed "s/'/''/g")
+                    (umask 077; printf "users:\n  - id: admin\n    tokens:\n      - '%s'\n" "$quoted" > /etc/chroma/credentials.yaml)
+                    keys=yes
+                  else
+                    rm -f /etc/chroma/credentials.yaml
+                  fi
+
+                  # Internal: the server answers on the private address, port 8000. Otherwise only Caddy reaches it, on 127.0.0.1.
+                  if [ "$ACCESS" = internal ]; then publish=8000:8000; else publish=127.0.0.1:8000:8000; fi
+
+                  docker pull -q "$IMAGE"
+                  old=""
+                  if docker inspect chroma >/dev/null 2>&1; then
+                    old=$(docker inspect chroma | sed -n 's/^ *"Image": "\(sha256:[0-9a-f]*\)",*$/\1/p' | head -n 1)
+                    docker stop -t 30 chroma
+                    docker rm chroma
+                  fi
+                  if [ "$keys" = yes ]; then
+                    docker run -d --name chroma --restart unless-stopped -p "$publish" -v /var/lib/chroma:/data \
+                      -v /etc/chroma/credentials.yaml:/credentials/credentials.yaml:ro \
+                      -e CHROMA_SERVER_AUTHN_CREDENTIALS_FILE=/credentials/credentials.yaml "$IMAGE"
+                  else
+                    docker run -d --name chroma --restart unless-stopped -p "$publish" -v /var/lib/chroma:/data "$IMAGE"
+                  fi
+                  ready=no
+                  for i in $(seq 1 90); do
+                    if curl -sf -o /dev/null http://127.0.0.1:8000/api/v2/heartbeat; then ready=yes; break; fi
+                    sleep 2
+                  done
+                  [ "$ready" = yes ] || { docker logs --tail 50 chroma; echo "the server did not answer"; exit 1; }
+                  # The image that this run replaced goes, so that the root volume (8 GiB) does not fill up update after update.
+                  new=$(docker image inspect "$IMAGE" | sed -n 's/^ *"Id": "\(sha256:[0-9a-f]*\)",*$/\1/p' | head -n 1)
+                  if [ -n "$old" ] && [ "$old" != "$new" ]; then docker image rm "$old" >/dev/null 2>&1 || true; fi
+
+                  if [ "$ACCESS" = internal ]; then
+                    systemctl disable --now caddy || true
+                  else
+                    case "$HOST" in *[!0-9.]*) ip=no ;; *) ip=yes ;; esac
+                    {
+                      if [ -n "$ACME_EMAIL" ] || [ "$ip" = yes ]; then
+                        printf '{\n'
+                        if [ -n "$ACME_EMAIL" ]; then printf '\temail %s\n' "$ACME_EMAIL"; fi
+                        # Clients send no SNI to an IP address, and the instance sees its private address, not the
+                        # Elastic IP: without a default name, Caddy finds no certificate and refuses the handshake.
+                        if [ "$ip" = yes ]; then printf '\tdefault_sni %s\n' "$HOST"; fi
+                        printf '}\n\n'
+                      fi
+                      # Port 80 only answers the HTTP-01 challenge of the certificate, which Caddy handles before this block.
+                      printf 'http://%s {\n\tabort\n}\n\n' "$HOST"
+                      printf '%s {\n' "$HOST"
+                      if [ "$ip" = yes ]; then
+                        # Let's Encrypt gives certificates for IP addresses only with its short-lived profile, valid for
+                        # about 6 days: Caddy renews them. Without this block Caddy would use its own local CA for an IP.
+                        printf '\ttls {\n\t\tissuer acme {\n\t\t\tprofile shortlived\n'
+                        if [ -n "$ACME_EMAIL" ]; then printf '\t\t\temail %s\n' "$ACME_EMAIL"; fi
+                        printf '\t\t}\n\t}\n'
+                      fi
+                      if [ "$ACCESS" = allowed-ips ]; then
+                        printf '\t@denied not remote_ip %s\n\tabort @denied\n' "$ALLOWED_IPS"
+                      fi
+                      printf '\treverse_proxy 127.0.0.1:8000\n}\n'
+                    } > /etc/caddy/Caddyfile
+                    caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+                    systemctl enable caddy
+                    systemctl reload-or-restart caddy
+                    # The stack is complete only once Caddy holds the certificate: right after the reload, HTTPS is not ready yet.
+                    cert=no
+                    for i in $(seq 1 90); do
+                      if ls /var/lib/caddy/.local/share/caddy/certificates/*/"$HOST"/"$HOST".crt >/dev/null 2>&1; then cert=yes; break; fi
+                      sleep 2
+                    done
+                    [ "$cert" = yes ] || { journalctl -u caddy --no-pager | tail -n 20; echo "no HTTPS certificate for $HOST after 180 s"; exit 1; }
+                  fi
+                  # No Go template in --format: Systems Manager reads double braces as its own parameters.
+                  docker ps --filter name=chroma
+                  caddy version || true
+
+  # Runs at the creation, and again at every update that changes its parameters; the stack waits for its result.
+  Configure:
+    Type: AWS::SSM::Association
+    Properties:
+      Name: !Ref ConfigureDocument
+      Targets:
+        - Key: InstanceIds
+          Values:
+            - !Ref Instance
+      Parameters:
+        engine:
+          - !Ref Engine
+        image:
+          - !If [IsChroma, !Ref ChromaImage, !Ref VecturaDBImage]
+        access:
+          - !Ref Access
+        host:
+          - !If [IsInternal, '', !If [HasDomain, !Ref DomainName, !Ref PublicIp]]
+        allowedIps:
+          - !Join [' ', !Ref AllowedIpRanges]
+        acmeEmail:
+          - !Ref AcmeEmail
+        apiKeySecret:
+          - !If [HasApiKey, !Ref ApiKeySecret, '']
+        region:
+          - !Ref AWS::Region
+      WaitForSuccessTimeoutSeconds: 1800
+
+  # Run it by hand, with the ID of a volume restored from a snapshot and attached to the instance.
+  RestoreDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Command
+      Content:
+        schemaVersion: '2.2'
+        description: Copies the data of a volume restored from a snapshot over the data volume, and starts the server again.
+        parameters:
+          volumeId:
+            type: String
+            allowedPattern: '^vol-[0-9a-f]{8,17}$'
+        mainSteps:
+          - action: aws:runShellScript
+            name: restore
+            inputs:
+              timeoutSeconds: '3600'
+              runCommand:
+                - |
+                  VOLUME_ID='{{ volumeId }}'
+                  # Restore of a snapshot. Create a volume from the snapshot in the availability zone of the instance,
+                  # attach it to the instance, and run this document with its ID: it copies the data over /var/lib/chroma
+                  # and starts the server again. The data volume stays the same, so the stack and the snapshots keep
+                  # working on it. Afterwards detach and delete the restored volume. The current data is replaced: take a
+                  # snapshot first to keep it. POSIX sh, whatever shell runs it.
+                  set -eu
+                  fail() { echo "$1"; exit 1; }
+
+                  disk=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_$(printf %s "$VOLUME_ID" | tr -d -)
+                  src=""
+                  for i in $(seq 1 30); do
+                    if [ -e "$disk" ]; then src=$(readlink -f "$disk"); break; fi
+                    sleep 2
+                  done
+                  [ -n "$src" ] || fail "volume $VOLUME_ID is not attached to this instance"
+                  mountpoint -q /var/lib/chroma || fail "the data volume is not mounted at /var/lib/chroma"
+                  if findmnt -rn -S "$src" >/dev/null; then fail "volume $VOLUME_ID is mounted: it must be the restored volume, not one in use"; fi
+
+                  # The restored volume is a copy of the data volume, label included: a label of its own keeps the fstab line
+                  # on the data volume.
+                  e2fsck -p "$src" || [ $? -le 1 ] || fail "the file system of volume $VOLUME_ID has errors"
+                  tune2fs -L chroma-restore "$src" >/dev/null
+                  mkdir -p /mnt/chroma-restore
+                  mount -o ro "$src" /mnt/chroma-restore
+                  if [ ! -e /mnt/chroma-restore/chroma.sqlite3 ]; then
+                    umount /mnt/chroma-restore
+                    fail "volume $VOLUME_ID holds no chroma.sqlite3: not a data volume of this template"
+                  fi
+
+                  t0=$(date +%s)
+                  docker stop -t 30 chroma >/dev/null
+                  find /var/lib/chroma -mindepth 1 -maxdepth 1 ! -name lost+found -exec rm -rf {} +
+                  cp -a /mnt/chroma-restore/. /var/lib/chroma/
+                  umount /mnt/chroma-restore
+                  t1=$(date +%s)
+                  docker start chroma >/dev/null
+                  ready=no
+                  for i in $(seq 1 90); do
+                    if curl -sf -o /dev/null http://127.0.0.1:8000/api/v2/heartbeat; then ready=yes; break; fi
+                    sleep 2
+                  done
+                  [ "$ready" = yes ] || { docker logs --tail 50 chroma; fail "the server did not answer after the restore"; }
+                  echo "restored $(du -sh /var/lib/chroma | cut -f1) in $((t1 - t0)) s, server ready $(( $(date +%s) - t1 )) s later: detach and delete volume $VOLUME_ID now"
+
+  # Snapshots of the data volume with Amazon Data Lifecycle Manager. The snapshots are not part of the stack: deleting
+  # the stack leaves them, see the README.
+  BackupRole:
+    Type: AWS::IAM::Role
+    Condition: HasBackup
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: dlm.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSDataLifecycleManagerServiceRole
+
+  BackupPolicy:
+    Type: AWS::DLM::LifecyclePolicy
+    Condition: HasBackup
+    Properties:
+      Description: !Sub Snapshots of the data volume of ${AWS::StackName}
+      State: ENABLED
+      ExecutionRoleArn: !GetAtt BackupRole.Arn
+      PolicyDetails:
+        PolicyType: EBS_SNAPSHOT_MANAGEMENT
+        ResourceTypes:
+          - VOLUME
+        TargetTags:
+          - Key: chroma-backup
+            Value: !Ref AWS::StackName
+        Schedules:
+          - Name: !Sub Every ${BackupEveryHours} hours
+            CreateRule:
+              Interval: !Ref BackupEveryHours
+              IntervalUnit: HOURS
+              Times:
+                - '02:00'
+            RetainRule:
+              Interval: !Ref BackupRetentionDays
+              IntervalUnit: DAYS
+            CopyTags: true
+
+Outputs:
+  Url:
+    Description: Address for the clients.
+    Value: !If
+      - IsInternal
+      - !Sub http://${Instance.PrivateIp}:8000
+      - !If [HasDomain, !Sub 'https://${DomainName}', !Sub 'https://${PublicIp}']
+  PublicIp:
+    Description: Public IP of the instance; with your own domain name, its DNS A record points here.
+    Value: !Ref PublicIp
+  PrivateIp:
+    Value: !GetAtt Instance.PrivateIp
+  InstanceId:
+    Description: For Session Manager and for a restore.
+    Value: !Ref Instance
+  DataVolumeId:
+    Value: !Ref DataVolume
+  RestoreDocument:
+    Description: The document that restores a snapshot, see the README.
+    Value: !Ref RestoreDocument
+  Engine:
+    Value: !Ref Engine
+  Image:
+    Value: !If [IsChroma, !Ref ChromaImage, !Ref VecturaDBImage]
+  Architecture:
+    Description: CPU architecture of the image of the operating system.
+    Value: !If [IsArm, arm64, amd64]
