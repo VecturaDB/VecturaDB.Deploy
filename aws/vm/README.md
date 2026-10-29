@@ -1,6 +1,6 @@
 # Chroma or VecturaDB on one AWS EC2 instance
 
-<!-- DRAFT, not published. The ⟨...⟩ marks wait for the S3 bucket of the button and for the final test from zero. -->
+<!-- DRAFT, not published. The ⟨...⟩ marks wait for the public bucket of the Launch Stack button and for the test from the button. -->
 
 > **Disclaimer.** This template and its scripts are provided as is, without warranty of any kind, as stated in the Apache License 2.0. The numbers below are what we measured on 29 October 2026 in eu-west-1: your region, sizes, data and versions may behave differently. You are responsible for your data: back it up, and test a restore on a copy before you rely on it. Not sure about your case? Open an issue in this repository and we will take a look on a best-effort basis.
 
@@ -49,7 +49,7 @@ For VecturaDB with an API key, add `ParameterKey=Engine,ParameterValue=vecturadb
 
 The two capabilities are needed because the stack creates IAM roles, and because it uses `AWS::LanguageExtensions` for one security group rule for each allowed range.
 
-In our tests a stack from zero took 279 seconds ⟨final test⟩, an update of an existing stack 34-126 seconds.
+In our tests a stack from zero took 279-400 seconds, an update of an existing stack 34-126 seconds.
 
 ## Sizes and cost
 
@@ -81,7 +81,7 @@ With 1 GiB of memory (904 MiB for the system), Chroma used 10 MiB at rest and 93
 - With `DomainName` and a DNS A record to the Elastic IP (the `PublicIp` output), the certificate is for your domain. The Elastic IP stays the same across updates: deploy first without the domain, create the record, then update the stack with `DomainName`.
 - Port 80 answers only the challenge of the certificate: Caddy closes every other request. With `allowed-ips`, Caddy also closes the requests from other addresses on 443.
 - Port 22 stays closed and the instance has no key pair. For a shell, use Session Manager: `aws ssm start-session --target <InstanceId>`, with the Session Manager plugin of the AWS CLI.
-- The stack is complete only when Caddy holds the certificate. If the certificate does not arrive within 180 seconds, the configuration fails with Caddy's log, and the stack rolls back.
+- The stack is complete only when the configuration has finished: Caddy holds the certificate and the server answers. At the creation the configuration signals its end to the stack, because in our tests Systems Manager alone once let the stack complete five minutes before the server answered. If the certificate does not arrive within 180 seconds, the configuration fails with Caddy's log. ⟨To verify: the rollback after a failure.⟩
 - Chroma 1.5.9 has no API keys: that is why `public` needs VecturaDB with `ApiKey`. The stack keeps the key in Secrets Manager; the instance writes it to a file readable by root only. Every request needs it in the `x-chroma-token` header.
 
 In our tests we ran the Python (chromadb 1.5.9) and JavaScript (chromadb 3.5.0) clients and a .NET client over HTTPS on the Elastic IP, against both servers: the same results on Chroma and on VecturaDB, and VecturaDB answered 401 without the key. On the instance, against the server on 127.0.0.1:8000 (t4g.micro, median of 20 runs): a query took 2.2 ms, a get 4.2 ms, an add of 2 records 35 ms, and 8 concurrent writers 6.1 seconds in all.
@@ -155,7 +155,7 @@ for s in $(aws ec2 describe-snapshots --region eu-west-1 --owner-ids self \
 done
 ```
 
-In our tests the deletion of the stack took 64 seconds; after the loop nothing of the stack was left in the region. When an update removed the API key, CloudFormation deleted the secret at once: it was not left among the secrets scheduled for deletion. ⟨Final test: the deletion of a stack with the key, and the steps in the console.⟩
+In our tests the deletion of the stack took 64 seconds, with and without the API key; after the loop nothing of the stack was left in the region. CloudFormation deleted the secret at once: it was not left among the secrets scheduled for deletion. ⟨To verify with the button: the same steps in the console.⟩
 
 ## Limits
 
