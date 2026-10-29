@@ -460,6 +460,10 @@ Resources:
           region:
             type: String
             allowedPattern: '^[a-z0-9-]+$'
+          signalUrl:
+            type: String
+            default: ''
+            allowedPattern: '^(https://[^\s'']*)?$'
         mainSteps:
           - action: aws:runShellScript
             name: configure
@@ -475,10 +479,19 @@ Resources:
                   ACME_EMAIL='{{ acmeEmail }}'
                   API_KEY_SECRET='{{ apiKeySecret }}'
                   REGION='{{ region }}'
+                  SIGNAL_URL='{{ signalUrl }}'
                   # Runs at the creation of the stack and at every update that changes these settings: starts the server
                   # with the image and the settings of the stack. The old container stops before the new one starts, so
                   # one process at a time works on /var/lib/chroma. POSIX sh, whatever shell runs it.
                   set -eu
+                  # The creation of the stack waits for this signal: in our tests Systems Manager alone once let the stack
+                  # complete before the first boot had finished. After the creation the signal changes nothing.
+                  signal() {
+                    [ -n "$SIGNAL_URL" ] || return 0
+                    curl -s -o /dev/null -X PUT -H 'Content-Type:' \
+                      --data-binary "{\"Status\": \"$1\", \"Reason\": \"$2\", \"UniqueId\": \"configure\", \"Data\": \"$2\"}" "$SIGNAL_URL" || true
+                  }
+                  trap 'rc=$?; [ "$rc" -eq 0 ] || signal FAILURE "the configuration failed with exit code $rc, see the output of the association in Systems Manager"' EXIT
                   cloud-init status --wait >/dev/null || true
                   [ -e /var/lib/chroma-first-boot-done ] || { echo "the first boot did not finish: see /var/log/cloud-init-output.log"; exit 1; }
                   mountpoint -q /var/lib/chroma || { echo "the data volume is not mounted at /var/lib/chroma"; exit 1; }
@@ -572,6 +585,7 @@ Resources:
                   # No Go template in --format: Systems Manager reads double braces as its own parameters.
                   docker ps --filter name=chroma
                   caddy version || true
+                  signal SUCCESS "the server answers"
 
   # Runs at the creation, and again at every update that changes its parameters; the stack waits for its result.
   Configure:
@@ -599,7 +613,21 @@ Resources:
           - !If [HasApiKey, !Ref ApiKeySecret, '']
         region:
           - !Ref AWS::Region
+        signalUrl:
+          - !Ref ConfigureHandle
       WaitForSuccessTimeoutSeconds: 1800
+
+  ConfigureHandle:
+    Type: AWS::CloudFormation::WaitConditionHandle
+
+  # The creation completes only when the configuration signals the end: the server answers, with its certificate.
+  Configured:
+    Type: AWS::CloudFormation::WaitCondition
+    DependsOn: Configure
+    Properties:
+      Handle: !Ref ConfigureHandle
+      Timeout: '1800'
+      Count: 1
 
   # Run it by hand, with the ID of a volume restored from a snapshot and attached to the instance.
   RestoreDocument:
