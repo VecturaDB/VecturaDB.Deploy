@@ -33,6 +33,10 @@ Files:
 
 CloudFormation reads templates from Amazon S3, so the button uses a copy of `template.yaml` of the tag `aws-v1.0.0` in a public bucket: `https://vecturadb-deploy.s3.eu-west-1.amazonaws.com/aws-v1.0.0/vm/template.yaml`.
 
+The same template with VecturaDB already chosen as the engine, and `vecturadb` as the name of the stack (`param_Engine=vecturadb` in the link):
+
+[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fvecturadb-deploy.s3.eu-west-1.amazonaws.com%2Faws-v1.0.0%2Fvm%2Ftemplate.yaml&stackName=vecturadb&param_Engine=vecturadb)
+
 The button opens the quick-create page of CloudFormation in eu-west-1, with the template and the name of the stack already filled in:
 
 1. Fill the parameters, in three groups: Server (engine, images, instance type, size of the data volume), Access (access mode, allowed IP ranges, API key, domain, email for Let's Encrypt) and Backups.

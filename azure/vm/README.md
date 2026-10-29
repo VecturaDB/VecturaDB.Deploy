@@ -23,16 +23,20 @@ Both servers keep the Chroma API, so the Chroma clients connect with the URL of 
 Files:
 
 - `main.bicep`: the template; `azuredeploy.json` is the same template compiled to ARM JSON;
-- `createUiDefinition.json`: the form of the Azure portal;
+- `createUiDefinition.json`: the form of the Azure portal; `createUiDefinition.vecturadb.json` is the same form with VecturaDB already chosen;
 - `cloud-init.sh`: the first boot (data disk, Docker, Caddy);
 - `configure.sh`: run at every deployment, it starts the server with the settings of that deployment;
 - `restore.sh`: restores a backup (see below).
 
 ## Deploy
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.1.1%2Fazure%2Fvm%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.1.1%2Fazure%2Fvm%2FcreateUiDefinition.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.2.0%2Fazure%2Fvm%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.2.0%2Fazure%2Fvm%2FcreateUiDefinition.json)
 
-The button opens the form of the Azure portal, with the template of the tag `azure-v1.1.1`.
+The button opens the form of the Azure portal, with the template of the tag `azure-v1.2.0`.
+
+The same template with VecturaDB already chosen as the server, and `vecturadb` as the name:
+
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.2.0%2Fazure%2Fvm%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.2.0%2Fazure%2Fvm%2FcreateUiDefinition.vecturadb.json)
 
 When the portal shows "Your deployment is complete", open **Outputs** in the menu on the left: `url` is the address of the server, for the clients.
 
@@ -41,7 +45,7 @@ With the Azure CLI:
 ```sh
 az group create -n my-chroma -l westeurope
 az deployment group create -g my-chroma \
-  --template-uri https://raw.githubusercontent.com/VecturaDB/VecturaDB.Deploy/azure-v1.1.1/azure/vm/azuredeploy.json \
+  --template-uri https://raw.githubusercontent.com/VecturaDB/VecturaDB.Deploy/azure-v1.2.0/azure/vm/azuredeploy.json \
   -p access=allowed-ips allowedIpRanges='["203.0.113.10/32"]' \
      adminPublicKey="$(cat ~/.ssh/id_ed25519.pub)"
 ```
