@@ -33,6 +33,12 @@ Files:
 
 ⟨The Launch Stack button: CloudFormation reads a template only from Amazon S3.⟩
 
+The button opens the quick-create page of CloudFormation in eu-west-1, with the template and the name of the stack already filled in:
+
+1. Fill the parameters, in three groups: Server (engine, images, instance type, size of the data volume), Access (access mode, allowed IP ranges, API key, domain, email for Let's Encrypt) and Backups.
+2. Under "Capabilities and transforms", tick the three acknowledgements: IAM resources, IAM resources with custom names, and `CAPABILITY_AUTO_EXPAND`.
+3. Choose "Create stack". When the status is `CREATE_COMPLETE`, the Outputs tab has the `Url` for the clients.
+
 With the AWS CLI, from a copy of `template.yaml`:
 
 ```sh
@@ -49,7 +55,7 @@ For VecturaDB with an API key, add `ParameterKey=Engine,ParameterValue=vecturadb
 
 The two capabilities are needed because the stack creates IAM roles, and because it uses `AWS::LanguageExtensions` for one security group rule for each allowed range.
 
-In our tests a stack from zero took 279-400 seconds, an update of an existing stack 34-126 seconds.
+In our tests a stack from zero took 400-608 seconds, until the server answered over HTTPS, and an update of an existing stack 34-126 seconds. Most of the creation is the first boot of the instance, which installs Docker and Caddy. A new instance in standard credit mode (see Sizes and cost) has no CPU credits yet, so it runs at the baseline CPU: in both our tests the CPU credit balance of the instance was 0 during the first boot.
 
 ## Sizes and cost
 
@@ -155,7 +161,9 @@ for s in $(aws ec2 describe-snapshots --region eu-west-1 --owner-ids self \
 done
 ```
 
-In our tests the deletion of the stack took 64 seconds, with and without the API key; after the loop nothing of the stack was left in the region. CloudFormation deleted the secret at once: it was not left among the secrets scheduled for deletion. ⟨To verify with the button: the same steps in the console.⟩
+In the console: select the stack, choose "Delete" and type the name of the stack to confirm. Then, in EC2 > Snapshots, delete the snapshots with the tag `chroma-backup` equal to the name of the stack.
+
+In our tests the deletion of the stack took 40-64 seconds, with and without the API key; afterwards nothing of the stack was left in the region. CloudFormation deleted the secret at once: it was not left among the secrets scheduled for deletion.
 
 ## Limits
 
