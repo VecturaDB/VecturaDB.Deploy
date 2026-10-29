@@ -1,7 +1,5 @@
 # Chroma or VecturaDB on one AWS EC2 instance
 
-<!-- DRAFT, not published. The ⟨...⟩ marks wait for the public bucket of the Launch Stack button and for the test from the button. -->
-
 > **Disclaimer.** This template and its scripts are provided as is, without warranty of any kind, as stated in the Apache License 2.0. The numbers below are what we measured on 29 October 2026 in eu-west-1: your region, sizes, data and versions may behave differently. You are responsible for your data: back it up, and test a restore on a copy before you rely on it. Not sure about your case? Open an issue in this repository and we will take a look on a best-effort basis.
 
 The template runs one server in your own AWS account, with its data on an EBS volume:
@@ -31,7 +29,9 @@ Files:
 
 ## Deploy
 
-⟨The Launch Stack button: CloudFormation reads a template only from Amazon S3.⟩
+[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fvecturadb-deploy.s3.eu-west-1.amazonaws.com%2Faws-v1.0.0%2Fvm%2Ftemplate.yaml&stackName=chroma)
+
+CloudFormation reads templates from Amazon S3, so the button uses a copy of `template.yaml` of the tag `aws-v1.0.0` in a public bucket: `https://vecturadb-deploy.s3.eu-west-1.amazonaws.com/aws-v1.0.0/vm/template.yaml`.
 
 The button opens the quick-create page of CloudFormation in eu-west-1, with the template and the name of the stack already filled in:
 
@@ -87,7 +87,7 @@ With 1 GiB of memory (904 MiB for the system), Chroma used 10 MiB at rest and 93
 - With `DomainName` and a DNS A record to the Elastic IP (the `PublicIp` output), the certificate is for your domain. The Elastic IP stays the same across updates: deploy first without the domain, create the record, then update the stack with `DomainName`.
 - Port 80 answers only the challenge of the certificate: Caddy closes every other request. With `allowed-ips`, Caddy also closes the requests from other addresses on 443.
 - Port 22 stays closed and the instance has no key pair. For a shell, use Session Manager: `aws ssm start-session --target <InstanceId>`, with the Session Manager plugin of the AWS CLI.
-- The stack is complete only when the configuration has finished: Caddy holds the certificate and the server answers. At the creation the configuration signals its end to the stack, because in our tests Systems Manager alone once let the stack complete five minutes before the server answered. If the certificate does not arrive within 180 seconds, the configuration fails with Caddy's log. ⟨To verify: the rollback after a failure.⟩
+- The stack is complete only when the configuration has finished: Caddy holds the certificate and the server answers. At the creation the configuration signals its end to the stack, because in our tests Systems Manager alone once let the stack complete five minutes before the server answered. If the certificate does not arrive within 180 seconds, the configuration fails with Caddy's log.
 - Chroma 1.5.9 has no API keys: that is why `public` needs VecturaDB with `ApiKey`. The stack keeps the key in Secrets Manager; the instance writes it to a file readable by root only. Every request needs it in the `x-chroma-token` header.
 
 In our tests we ran the Python (chromadb 1.5.9) and JavaScript (chromadb 3.5.0) clients and a .NET client over HTTPS on the Elastic IP, against both servers: the same results on Chroma and on VecturaDB, and VecturaDB answered 401 without the key. On the instance, against the server on 127.0.0.1:8000 (t4g.micro, median of 20 runs): a query took 2.2 ms, a get 4.2 ms, an add of 2 records 35 ms, and 8 concurrent writers 6.1 seconds in all.
