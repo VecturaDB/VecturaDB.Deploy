@@ -1,1 +1,12 @@
 * text=auto eol=lf
+# The files that end up on Linux, always with LF: with text=auto, git keeps a carriage return in a file that already
+# has one in the repository. A shell script with "sync\r" stops with "command not found" on the VM.
+*.sh text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.bicep text eol=lf
+*.tf text eol=lf
+*.tfvars text eol=lf
+*.hcl text eol=lf
+*.json text eol=lf
+*.md text eol=lf
