@@ -2,4 +2,7 @@
 terraform.tfstate
 terraform.tfstate.*
 terraform.tfstate.d/
+# Your own settings may hold an API key: only the two settings files of the guides are in the repository.
 *.tfvars
+!/chroma.tfvars
+!/vecturadb.tfvars
