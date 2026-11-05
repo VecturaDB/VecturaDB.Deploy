@@ -20,7 +20,7 @@
         "name": "engine",
         "type": "Microsoft.Common.DropDown",
         "label": "Server",
-        "defaultValue": "VecturaDB 1.0.0-preview.3.post1",
+        "defaultValue": "VecturaDB 1.0.0-preview.7",
         "toolTip": "VecturaDB is built from Chroma and adds sparse vectors, BM25, the Search API, collection fork and API keys.",
         "constraints": {
           "allowedValues": [
@@ -29,7 +29,7 @@
               "value": "chroma"
             },
             {
-              "label": "VecturaDB 1.0.0-preview.3.post1",
+              "label": "VecturaDB 1.0.0-preview.7",
               "value": "vecturadb"
             }
           ],

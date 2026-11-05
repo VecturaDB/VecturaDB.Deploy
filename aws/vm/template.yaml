@@ -48,7 +48,7 @@ Parameters:
     Description: Image of Chroma. The same image is on Docker Hub as chromadb/chroma.
   VecturaDBImage:
     Type: String
-    Default: ghcr.io/vecturadb/vecturadb:1.0.0-preview.3.post1
+    Default: ghcr.io/vecturadb/vecturadb:1.0.0-preview.7
     AllowedPattern: '^[a-zA-Z0-9][a-zA-Z0-9./:@_-]*$'
     Description: Image of VecturaDB.
   InstanceType:

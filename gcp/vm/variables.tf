@@ -44,7 +44,7 @@ variable "chroma_image" {
 variable "vecturadb_image" {
   description = "Image of VecturaDB."
   type        = string
-  default     = "ghcr.io/vecturadb/vecturadb:1.0.0-preview.6"
+  default     = "ghcr.io/vecturadb/vecturadb:1.0.0-preview.7"
 }
 
 variable "machine_type" {
