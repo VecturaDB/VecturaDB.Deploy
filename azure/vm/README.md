@@ -30,13 +30,13 @@ Files:
 
 ## Deploy
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.2.0%2Fazure%2Fvm%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.2.0%2Fazure%2Fvm%2FcreateUiDefinition.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.3.0%2Fazure%2Fvm%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.3.0%2Fazure%2Fvm%2FcreateUiDefinition.json)
 
-The button opens the form of the Azure portal, with the template of the tag `azure-v1.2.0`.
+The button opens the form of the Azure portal, with the template of the tag `azure-v1.3.0`.
 
 The same template with VecturaDB already chosen as the server, and `vecturadb` as the name:
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.2.0%2Fazure%2Fvm%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.2.0%2Fazure%2Fvm%2FcreateUiDefinition.vecturadb.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.3.0%2Fazure%2Fvm%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FVecturaDB%2FVecturaDB.Deploy%2Fazure-v1.3.0%2Fazure%2Fvm%2FcreateUiDefinition.vecturadb.json)
 
 When the portal shows "Your deployment is complete", open **Outputs** in the menu on the left: `url` is the address of the server, for the clients.
 
@@ -45,7 +45,7 @@ With the Azure CLI:
 ```sh
 az group create -n my-chroma -l westeurope
 az deployment group create -g my-chroma \
-  --template-uri https://raw.githubusercontent.com/VecturaDB/VecturaDB.Deploy/azure-v1.2.0/azure/vm/azuredeploy.json \
+  --template-uri https://raw.githubusercontent.com/VecturaDB/VecturaDB.Deploy/azure-v1.3.0/azure/vm/azuredeploy.json \
   -p access=allowed-ips allowedIpRanges='["203.0.113.10/32"]' \
      adminPublicKey="$(cat ~/.ssh/id_ed25519.pub)"
 ```
@@ -127,7 +127,7 @@ After the restore the server held the data of the backup, and not the data writt
 ## Updates and restarts
 
 - To change the server, its image or the access, deploy the template again with the new parameters. Every deployment runs `configure.sh`, even with the same parameters: it pulls the image, stops the old container (up to 30 seconds), starts the new one and waits for it. The server is down during the switch.
-- The data stays on the data disk. In our tests a switch from Chroma 1.5.9 to VecturaDB took 67-68 seconds, and VecturaDB read the collections written by Chroma.
+- The data stays on the data disk.
 - Docker starts only once the data disk is mounted. A VM that boots without its data disk serves nothing (Caddy answers 502), rather than an empty database.
 - Ubuntu installs its security updates by itself (unattended-upgrades), Docker included. Caddy comes from its own repository, which unattended-upgrades leaves out: update it with `apt-get upgrade`, for example through `az vm run-command invoke`.
 - In our tests a restart (`az vm restart`) took 73 seconds, and the server answered 11 seconds later, with its data.

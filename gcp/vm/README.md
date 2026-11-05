@@ -63,7 +63,7 @@ For VecturaDB with an API key, use `vecturadb.tfvars` and `export TF_VAR_api_key
 
 The commands run Terraform with `-parallelism=2`: in our tests from Cloud Shell, with the default of 10 parallel operations 5 plans out of 11 failed with a refused connection to the Google APIs, and with 2 none out of 11.
 
-`terraform apply` ends only when the server answers, over HTTPS with its certificate. In our tests a deployment from zero took 364-568 seconds: most of it is the first boot of the VM, which installs Docker and Caddy from the package repositories. In our two tests from Cloud Shell the first boot took 4 minutes 22 seconds and 6 minutes 22 seconds: the list of the Ubuntu packages alone took 29 seconds the first time and 2 minutes the second. Installing Terraform in Cloud Shell took about 40 seconds.
+`terraform apply` ends only when the server answers, over HTTPS with its certificate. In our tests of 5 November a deployment from zero took 376-626 seconds: most of it is the first boot of the VM, which installs Docker and Caddy from the package repositories, so its time depends on them. In the test of 626 seconds the first boot took 6 minutes 29 seconds, and the list of the Ubuntu packages alone 2 minutes 6 seconds. Installing Terraform in Cloud Shell took about 40 seconds.
 
 ## Sizes and cost
 
@@ -122,18 +122,18 @@ In our tests:
 
 | Step | Time |
 |---|---|
-| Snapshot by hand | 64 s |
-| Disk from the snapshot | 23-24 s |
-| Attach | 6-10 s |
-| Copy on the VM, until the server answers | 7-11 s |
-| Detach and delete | 8-12 s |
+| Snapshot by hand | 32-48 s |
+| Disk from the snapshot | 23-26 s |
+| Attach | 6-20 s |
+| Copy on the VM, until the server answers | 7-9 s |
+| Detach and delete | 8-9 s |
 
-With Chroma 1.5.9, after each restore the server held all the collections of the snapshot, also the one written right before it. ⟨VecturaDB: sentence to be decided.⟩
+With Chroma 1.5.9 and with VecturaDB 1.0.0-preview.7, after each restore the server held all the collections of the snapshot, also the one written right before it.
 
 ## Updates and restarts
 
 - To change the server, its image, the access or the key, apply again with the new settings. When they change, the agent of the VM runs the configuration again: it pulls the image, stops the old container (up to 30 seconds), starts the new one and waits for it. The server is down during the switch. An apply that changes none of them does not restart the server.
-- The data stays on the data disk. In our tests a switch from Chroma 1.5.9 to VecturaDB with an API key took 36-42 seconds, and VecturaDB read the collections written by Chroma; a new key took 25 seconds, and the old key was refused afterwards.
+- The data stays on the data disk. In our tests a switch from Chroma 1.5.9 to VecturaDB with an API key took 33 seconds, and VecturaDB read the collections written by Chroma; a new key took 25 seconds, and afterwards the client could no longer connect with the old key.
 - The image of the operating system is the latest Ubuntu 24.04 at the creation. An apply never replaces the VM, so it never moves the data disk. Ubuntu installs its security updates by itself (unattended-upgrades), Docker included.
 - A change of `machine_type` stops and starts the same VM.
 - Docker starts only once the data disk is mounted. A VM that boots without its data disk serves nothing, rather than an empty database.
@@ -146,7 +146,7 @@ With Chroma 1.5.9, after each restore the server held all the collections of the
 terraform destroy -parallelism=2 -var-file=chroma.tfvars && for s in $(gcloud compute snapshots list --filter="labels.chroma-backup=chroma" --format="value(name)"); do gcloud compute snapshots delete $s --quiet; done && gcloud storage rm --recursive --all-versions gs://<bucket>/chroma
 ```
 
-In our tests `terraform destroy` took 112-124 seconds from a computer, also without the API key, and 2 minutes 28 seconds in Cloud Shell with its confirmation; afterwards nothing of the deployment was left in the project.
+In our tests `terraform destroy` took 109-141 seconds from a computer, also without the API key, and 2 minutes 28 seconds in Cloud Shell with its confirmation; afterwards nothing of the deployment was left in the project.
 
 ## Limits
 

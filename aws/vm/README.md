@@ -29,13 +29,13 @@ Files:
 
 ## Deploy
 
-[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fvecturadb-deploy.s3.eu-west-1.amazonaws.com%2Faws-v1.0.0%2Fvm%2Ftemplate.yaml&stackName=chroma)
+[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fvecturadb-deploy.s3.eu-west-1.amazonaws.com%2Faws-v1.1.0%2Fvm%2Ftemplate.yaml&stackName=chroma)
 
-CloudFormation reads templates from Amazon S3, so the button uses a copy of `template.yaml` of the tag `aws-v1.0.0` in a public bucket: `https://vecturadb-deploy.s3.eu-west-1.amazonaws.com/aws-v1.0.0/vm/template.yaml`.
+CloudFormation reads templates from Amazon S3, so the button uses a copy of `template.yaml` of the tag `aws-v1.1.0` in a public bucket: `https://vecturadb-deploy.s3.eu-west-1.amazonaws.com/aws-v1.1.0/vm/template.yaml`.
 
 The same template with VecturaDB already chosen as the engine, and `vecturadb` as the name of the stack (`param_Engine=vecturadb` in the link):
 
-[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fvecturadb-deploy.s3.eu-west-1.amazonaws.com%2Faws-v1.0.0%2Fvm%2Ftemplate.yaml&stackName=vecturadb&param_Engine=vecturadb)
+[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fvecturadb-deploy.s3.eu-west-1.amazonaws.com%2Faws-v1.1.0%2Fvm%2Ftemplate.yaml&stackName=vecturadb&param_Engine=vecturadb)
 
 The button opens the quick-create page of CloudFormation in eu-west-1, with the template and the name of the stack already filled in:
 
@@ -145,7 +145,7 @@ After the restore the server held the data of the snapshot, 4,400 records writte
 ## Updates and restarts
 
 - To change the server, its image or the access, update the stack with the new parameters. When they change, Systems Manager runs the configuration again: it pulls the image, stops the old container (up to 30 seconds), starts the new one and waits for it. The server is down during the switch. An update that changes none of them does not restart the server.
-- The data stays on the data volume. In our tests a switch from Chroma 1.5.9 to VecturaDB with an API key took 65 seconds, and VecturaDB read the collections written by Chroma; a change of access took 34 seconds.
+- The data stays on the data volume.
 - After a switch, the configuration deletes the image it replaced, so that the root volume of 8 GiB does not fill up update after update.
 - The image of the operating system is the latest Ubuntu 24.04 at the creation of the stack. An update never replaces the instance, so it never moves the data volume. Ubuntu installs its security updates by itself (unattended-upgrades), Docker included. Caddy comes from its own repository, which unattended-upgrades leaves out: update it with `apt-get upgrade`, for example through `aws ssm send-command --document-name AWS-RunShellScript`.
 - A change of `InstanceType` within the same family stops and starts the same instance: in our tests, from t4g.micro to t4g.small, the update took 65 seconds and the server did not answer for about 30. A change between t4g (Arm) and t3 (x86) changes the image of the operating system: it needs a new stack and a restore.
