@@ -114,7 +114,7 @@ To change a setting later, open the guide again with the same button and repeat 
 To delete everything, after the steps up to Settings:
 
 ```sh
-terraform destroy -parallelism=2 -var-file=vecturadb.tfvars && for s in $(gcloud compute snapshots list --filter="labels.chroma-backup=vecturadb" --format="value(name)"); do gcloud compute snapshots delete $s --quiet; done && gcloud storage rm --recursive --all-versions gs://$BUCKET/vecturadb
+terraform destroy -parallelism=2 -var-file=vecturadb.tfvars && for s in $(gcloud compute snapshots list --filter="labels.chroma-backup=vecturadb" --format="value(name)" --verbosity=error); do gcloud compute snapshots delete $s --quiet; done && gcloud storage rm --recursive --all-versions gs://$BUCKET/vecturadb
 ```
 
 The snapshots are not part of the deployment. Only after `terraform destroy` has ended without errors, the command deletes them, then the state and the settings in the bucket. `gcloud storage rm --recursive --all-versions gs://$BUCKET` deletes the bucket too, when it holds no other deployment.

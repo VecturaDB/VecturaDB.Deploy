@@ -143,7 +143,7 @@ With Chroma 1.5.9 and with VecturaDB 1.0.0-preview.7, after each restore the ser
 `terraform destroy` deletes the VM, the data disk, the network, the IP address, the service account and the secret. The snapshots stay: delete them after the VM, so that no new snapshot comes after the cleanup. Then delete the state and the settings in the bucket:
 
 ```sh
-terraform destroy -parallelism=2 -var-file=chroma.tfvars && for s in $(gcloud compute snapshots list --filter="labels.chroma-backup=chroma" --format="value(name)"); do gcloud compute snapshots delete $s --quiet; done && gcloud storage rm --recursive --all-versions gs://<bucket>/chroma
+terraform destroy -parallelism=2 -var-file=chroma.tfvars && for s in $(gcloud compute snapshots list --filter="labels.chroma-backup=chroma" --format="value(name)" --verbosity=error); do gcloud compute snapshots delete $s --quiet; done && gcloud storage rm --recursive --all-versions gs://<bucket>/chroma
 ```
 
 In our tests `terraform destroy` took 109-141 seconds from a computer, also without the API key, and 2 minutes 28 seconds in Cloud Shell with its confirmation; afterwards nothing of the deployment was left in the project.
