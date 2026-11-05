@@ -30,6 +30,9 @@ t0=$(date +%s)
 docker stop -t 30 chroma >/dev/null
 find /var/lib/chroma -mindepth 1 -maxdepth 1 ! -name lost+found -exec rm -rf {} +
 cp -a /mnt/chroma-restore/. /var/lib/chroma/
+# Write the copy to the disk before the server starts: Linux would do it up to about 30 seconds later, and a
+# snapshot or a power cut in that time could keep empty files.
+sync
 umount /mnt/chroma-restore
 t1=$(date +%s)
 docker start chroma >/dev/null
