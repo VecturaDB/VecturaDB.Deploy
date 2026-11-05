@@ -74,7 +74,7 @@ variable "allowed_ip_ranges" {
 }
 
 variable "api_key" {
-  description = "VecturaDB only: the API key of the admin user, at least 16 characters. Every request then needs it, in the x-chroma-token header. Required when access is public. The deployment keeps it in Secret Manager."
+  description = "VecturaDB only: the API key of the admin user, at least 16 characters. Every request then needs it, in the x-chroma-token header. Required when access is public. The deployment keeps it in Secret Manager, not in the state: give it again at every apply, as an apply without it removes the key."
   type        = string
   default     = ""
   sensitive   = true

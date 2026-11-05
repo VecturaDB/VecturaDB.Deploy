@@ -1,5 +1,6 @@
 terraform {
-  required_version = ">= 1.3"
+  # 1.11: the API key is a write-only argument, kept out of the state.
+  required_version = ">= 1.11"
   required_providers {
     google = {
       source  = "hashicorp/google"

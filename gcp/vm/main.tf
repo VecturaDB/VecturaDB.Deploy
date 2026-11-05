@@ -3,9 +3,11 @@
 # reports the outcome in the guest attributes, which terraform apply waits for (scripts/wait-configured.sh).
 
 locals {
-  labels   = { chroma-deployment = var.name }
-  image    = var.engine == "vecturadb" ? var.vecturadb_image : var.chroma_image
-  with_key = var.engine == "vecturadb" && var.api_key != ""
+  labels = { chroma-deployment = var.name }
+  image  = var.engine == "vecturadb" ? var.vecturadb_image : var.chroma_image
+  # Whether there is a key is not a secret: without nonsensitive, the configuration and the output of terraform apply,
+  # which waits for it, would be hidden as sensitive.
+  with_key = var.engine == "vecturadb" && nonsensitive(var.api_key != "")
   host     = var.domain_name != "" ? var.domain_name : google_compute_address.ip.address
   config = jsonencode({
     engine         = var.engine
@@ -21,21 +23,9 @@ locals {
   config_hash = substr(sha256(local.config), 0, 16)
 }
 
-resource "google_project_service" "compute" {
-  service            = "compute.googleapis.com"
-  disable_on_destroy = false
-}
-
-resource "google_project_service" "secretmanager" {
-  count              = local.with_key ? 1 : 0
-  service            = "secretmanager.googleapis.com"
-  disable_on_destroy = false
-}
-
 resource "google_compute_network" "net" {
   name                    = "${var.name}-net"
   auto_create_subnetworks = false
-  depends_on              = [google_project_service.compute]
 }
 
 resource "google_compute_subnetwork" "subnet" {
@@ -85,19 +75,17 @@ resource "google_compute_firewall" "internal" {
 
 # The address for HTTPS, and the way out to the package and image registries, also with internal access.
 resource "google_compute_address" "ip" {
-  name       = "${var.name}-ip"
-  region     = var.region
-  labels     = local.labels
-  depends_on = [google_project_service.compute]
+  name   = "${var.name}-ip"
+  region = var.region
+  labels = local.labels
 }
 
 resource "google_compute_disk" "data" {
-  name       = "${var.name}-data"
-  type       = "pd-balanced"
-  zone       = var.zone
-  size       = var.data_disk_size_gb
-  labels     = merge(local.labels, { chroma-backup = var.name })
-  depends_on = [google_project_service.compute]
+  name   = "${var.name}-data"
+  type   = "pd-balanced"
+  zone   = var.zone
+  size   = var.data_disk_size_gb
+  labels = merge(local.labels, { chroma-backup = var.name })
 }
 
 # Snapshots of the data disk. They are not part of the deployment: terraform destroy leaves them, see the README.
@@ -131,7 +119,6 @@ resource "google_compute_resource_policy" "backup" {
       storage_locations = [var.region]
     }
   }
-  depends_on = [google_project_service.compute]
 }
 
 resource "google_compute_disk_resource_policy_attachment" "backup" {
@@ -154,13 +141,15 @@ resource "google_secret_manager_secret" "api_key" {
   replication {
     auto {}
   }
-  depends_on = [google_project_service.secretmanager]
 }
 
+# Write-only: the key goes to Secret Manager and never into the state of Terraform. The version number comes from a hash
+# of the key, so the same key again changes nothing, and a new key makes a new version.
 resource "google_secret_manager_secret_version" "api_key" {
-  count       = local.with_key ? 1 : 0
-  secret      = google_secret_manager_secret.api_key[0].id
-  secret_data = var.api_key
+  count                  = local.with_key ? 1 : 0
+  secret                 = google_secret_manager_secret.api_key[0].id
+  secret_data_wo         = var.api_key
+  secret_data_wo_version = parseint(substr(sha256(var.api_key), 0, 8), 16)
 }
 
 resource "google_secret_manager_secret_iam_member" "vm" {
