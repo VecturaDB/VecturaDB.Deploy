@@ -41,7 +41,7 @@ The same with VecturaDB as the server, and the step of the API key:
 
 [![Open in Cloud Shell](https://gstatic.com/cloudssh/images/open-btn.svg)](https://shell.cloud.google.com/cloudshell/editor?cloudshell_git_repo=https://github.com/VecturaDB/VecturaDB.Deploy&cloudshell_git_branch=gcp-v1.0.0&cloudshell_workspace=gcp/vm&cloudshell_tutorial=tutorial-vecturadb.md)
 
-1. Google asks to confirm the clone of the repository. Without "Trust repo", Cloud Shell is temporary: its files are deleted at the end of the session, and it has no credentials until the guide signs you in. In a temporary Cloud Shell `gcloud auth login` first says that you are already authenticated: answer `Y`.
+1. Google asks to confirm the clone of the repository. Without "Trust repo", Cloud Shell is temporary: its files are deleted at the end of the session, and it has no credentials until the guide signs you in. If Google asks to authorize Cloud Shell when it opens, it is not needed: click outside it to close it, the guide signs you in. In a temporary Cloud Shell `gcloud auth login` first says that you are already authenticated: answer `Y`.
 2. The guide installs Terraform: Cloud Shell has none.
 3. It creates a Cloud Storage bucket for the state of Terraform, `<project id>-chroma-tfstate`, in europe-west1, with versioning and without public access. The settings file goes to the bucket too, next to the state.
 4. You give the IP address of your computer, and with VecturaDB the API key, then `terraform apply` creates everything.

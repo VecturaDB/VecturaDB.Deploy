@@ -25,10 +25,15 @@ gcloud config set project <walkthrough-project-id/>
 
 ## Sign in
 
-A Cloud Shell opened from a repository that you did not mark as trusted is temporary, and has no credentials. The command signs you in only when they are missing: gcloud first says that you are already authenticated, answer `Y`; then open the link it prints, sign in with the account of the project, and paste the code in the terminal. In a Cloud Shell with your credentials, Google may ask to authorize Cloud Shell instead: choose Authorize.
+A Cloud Shell opened from a repository that you did not mark as trusted is temporary, and has no credentials. The first command signs you in only when they are missing: gcloud first says that you are already authenticated, answer `Y`; then open the link it prints, sign in with the account of the project, and paste the code in the terminal. In a Cloud Shell with your credentials, Google may ask to authorize Cloud Shell instead: choose Authorize.
+
+The second command gives that sign-in to Terraform too: in a temporary Cloud Shell, Terraform does not find it by itself.
+
+When a temporary Cloud Shell opens, Google may also ask to authorize Cloud Shell: it is not needed there, click outside it to close it.
 
 ```sh
 gcloud auth print-access-token >/dev/null 2>&1 || gcloud auth login --update-adc
+[ -f "$CLOUDSDK_CONFIG/application_default_credentials.json" ] && export GOOGLE_APPLICATION_CREDENTIALS=$CLOUDSDK_CONFIG/application_default_credentials.json
 ```
 
 ## Install Terraform
