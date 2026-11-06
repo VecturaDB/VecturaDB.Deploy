@@ -1,6 +1,6 @@
 # Chroma or VecturaDB on one Google Cloud VM
 
-> **Disclaimer.** This template and its scripts are provided as is, without warranty of any kind, as stated in the Apache License 2.0. The numbers below are what we measured on 4 and 5 November 2026 in europe-west1: your region, sizes, data and versions may behave differently. You are responsible for your data: back it up, and test a restore on a copy before you rely on it. Not sure about your case? Open an issue in this repository and we will take a look on a best-effort basis.
+> **Disclaimer.** This template and its scripts are provided as is, without warranty of any kind, as stated in the Apache License 2.0. The numbers below are what we measured on 4, 5 and 6 November 2026 in europe-west1: your region, sizes, data and versions may behave differently. You are responsible for your data: back it up, and test a restore on a copy before you rely on it. Not sure about your case? Open an issue in this repository and we will take a look on a best-effort basis.
 
 The template runs one server in a Google Cloud project of yours, with its data on a disk of its own:
 
@@ -63,7 +63,7 @@ For VecturaDB with an API key, use `vecturadb.tfvars` and `export TF_VAR_api_key
 
 The commands run Terraform with `-parallelism=2`: in our tests from Cloud Shell, with the default of 10 parallel operations 5 plans out of 11 failed with a refused connection to the Google APIs, and with 2 none out of 11.
 
-`terraform apply` ends only when the server answers, over HTTPS with its certificate. In our tests of 5 November a deployment from zero took 376-626 seconds: most of it is the first boot of the VM, which installs Docker and Caddy from the package repositories, so its time depends on them. In the test of 626 seconds the first boot took 6 minutes 29 seconds, and the list of the Ubuntu packages alone 2 minutes 6 seconds. Installing Terraform in Cloud Shell took about 40 seconds.
+`terraform apply` ends only when the server answers, over HTTPS with its certificate. In our tests of 5 and 6 November a deployment from zero took 376-626 seconds: most of it is the first boot of the VM, which installs Docker and Caddy from the package repositories, so its time depends on them. In the test of 626 seconds the first boot took 6 minutes 29 seconds, and the list of the Ubuntu packages alone 2 minutes 6 seconds. Installing Terraform in Cloud Shell took about 40 seconds.
 
 ## Sizes and cost
 
@@ -126,14 +126,14 @@ In our tests:
 | Disk from the snapshot | 23-26 s |
 | Attach | 6-20 s |
 | Copy on the VM, until the server answers | 7-9 s |
-| Detach and delete | 8-9 s |
+| Detach and delete | 8-10 s |
 
-With Chroma 1.5.9 and with VecturaDB 1.0.0-preview.7, after each restore the server held all the collections of the snapshot, also the one written right before it.
+With Chroma 1.5.9 and with VecturaDB 1.0.0-preview.8, after each restore the server held all the collections of the snapshot, also the one written right before it.
 
 ## Updates and restarts
 
 - To change the server, its image, the access or the key, apply again with the new settings. When they change, the agent of the VM runs the configuration again: it pulls the image, stops the old container (up to 30 seconds), starts the new one and waits for it. The server is down during the switch. An apply that changes none of them does not restart the server.
-- The data stays on the data disk. In our tests a switch from Chroma 1.5.9 to VecturaDB with an API key took 33 seconds, and VecturaDB read the collections written by Chroma; a new key took 25 seconds, and afterwards the client could no longer connect with the old key.
+- The data stays on the data disk. In our tests a switch from Chroma 1.5.9 to VecturaDB with an API key took 25 seconds, and VecturaDB read the collections written by Chroma; a new key took 23 seconds, and afterwards the client could no longer connect with the old key.
 - The image of the operating system is the latest Ubuntu 24.04 at the creation. An apply never replaces the VM, so it never moves the data disk. Ubuntu installs its security updates by itself (unattended-upgrades), Docker included.
 - A change of `machine_type` stops and starts the same VM.
 - Docker starts only once the data disk is mounted. A VM that boots without its data disk serves nothing, rather than an empty database.
@@ -146,7 +146,7 @@ With Chroma 1.5.9 and with VecturaDB 1.0.0-preview.7, after each restore the ser
 terraform destroy -parallelism=2 -var-file=chroma.tfvars && for s in $(gcloud compute snapshots list --filter="labels.chroma-backup=chroma" --format="value(name)" --verbosity=error); do gcloud compute snapshots delete $s --quiet; done && gcloud storage rm --recursive --all-versions gs://<bucket>/chroma
 ```
 
-In our tests `terraform destroy` took 109-141 seconds from a computer, also without the API key, and 2 minutes 28 seconds in Cloud Shell with its confirmation; afterwards nothing of the deployment was left in the project.
+In our tests `terraform destroy` took 99-141 seconds from a computer, also without the API key, and 2 minutes 28 seconds in Cloud Shell with its confirmation; afterwards nothing of the deployment was left in the project.
 
 ## Limits
 
