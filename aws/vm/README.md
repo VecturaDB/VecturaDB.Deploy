@@ -1,6 +1,6 @@
 # Chroma or VecturaDB on one AWS EC2 instance
 
-> **Disclaimer.** This template and its scripts are provided as is, without warranty of any kind, as stated in the Apache License 2.0. The numbers below are what we measured on 29 October 2026 in eu-west-1: your region, sizes, data and versions may behave differently. You are responsible for your data: back it up, and test a restore on a copy before you rely on it. Not sure about your case? Open an issue in this repository and we will take a look on a best-effort basis.
+> **Disclaimer.** This template and its scripts are provided as is, without warranty of any kind, as stated in the Apache License 2.0. The numbers below are what we measured on 29 October and 6 November 2026 in eu-west-1: your region, sizes, data and versions may behave differently. You are responsible for your data: back it up, and test a restore on a copy before you rely on it. Not sure about your case? Open an issue in this repository and we will take a look on a best-effort basis.
 
 The template runs one server in your own AWS account, with its data on an EBS volume:
 
@@ -29,13 +29,13 @@ Files:
 
 ## Deploy
 
-[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fvecturadb-deploy.s3.eu-west-1.amazonaws.com%2Faws-v1.2.0%2Fvm%2Ftemplate.yaml&stackName=chroma)
+[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fvecturadb-deploy.s3.eu-west-1.amazonaws.com%2Faws-v1.2.1%2Fvm%2Ftemplate.yaml&stackName=chroma)
 
-CloudFormation reads templates from Amazon S3, so the button uses a copy of `template.yaml` of the tag `aws-v1.2.0` in a public bucket: `https://vecturadb-deploy.s3.eu-west-1.amazonaws.com/aws-v1.2.0/vm/template.yaml`.
+CloudFormation reads templates from Amazon S3, so the button uses a copy of `template.yaml` of the tag `aws-v1.2.1` in a public bucket: `https://vecturadb-deploy.s3.eu-west-1.amazonaws.com/aws-v1.2.1/vm/template.yaml`.
 
 The same template with VecturaDB already chosen as the engine, and `vecturadb` as the name of the stack (`param_Engine=vecturadb` in the link):
 
-[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fvecturadb-deploy.s3.eu-west-1.amazonaws.com%2Faws-v1.2.0%2Fvm%2Ftemplate.yaml&stackName=vecturadb&param_Engine=vecturadb)
+[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fvecturadb-deploy.s3.eu-west-1.amazonaws.com%2Faws-v1.2.1%2Fvm%2Ftemplate.yaml&stackName=vecturadb&param_Engine=vecturadb)
 
 The button opens the quick-create page of CloudFormation in eu-west-1, with the template and the name of the stack already filled in:
 
@@ -144,7 +144,34 @@ After the restore the server held the data of the snapshot, 4,400 records writte
 
 ## Updates and restarts
 
-- To change the server, its image or the access, update the stack with the new parameters. When they change, Systems Manager runs the configuration again: it pulls the image, stops the old container (up to 30 seconds), starts the new one and waits for it. The server is down during the switch. An update that changes none of them does not restart the server.
+- To change the server, its image or the access, update the stack with the template of the release from the bucket, and the new values. In our tests an update that kept the template in use (`--use-previous-template`) and changed only `VecturaDBImage` did nothing: CloudFormation answered "No updates are to be performed". With the AWS CLI, list every parameter of the template in a file, the new values with `ParameterValue` and the others with `UsePreviousValue`, for example `parameters.json` for another image of VecturaDB:
+
+  ```json
+  [
+    {"ParameterKey": "Engine", "UsePreviousValue": true},
+    {"ParameterKey": "ChromaImage", "UsePreviousValue": true},
+    {"ParameterKey": "VecturaDBImage", "ParameterValue": "ghcr.io/vecturadb/vecturadb:1.0.0-preview.8"},
+    {"ParameterKey": "InstanceType", "UsePreviousValue": true},
+    {"ParameterKey": "DataVolumeSizeGB", "UsePreviousValue": true},
+    {"ParameterKey": "Access", "UsePreviousValue": true},
+    {"ParameterKey": "AllowedIpRanges", "UsePreviousValue": true},
+    {"ParameterKey": "ApiKey", "UsePreviousValue": true},
+    {"ParameterKey": "DomainName", "UsePreviousValue": true},
+    {"ParameterKey": "AcmeEmail", "UsePreviousValue": true},
+    {"ParameterKey": "Backup", "UsePreviousValue": true},
+    {"ParameterKey": "BackupEveryHours", "UsePreviousValue": true},
+    {"ParameterKey": "BackupRetentionDays", "UsePreviousValue": true}
+  ]
+  ```
+
+  ```sh
+  aws cloudformation update-stack --region eu-west-1 --stack-name my-chroma \
+    --template-url https://vecturadb-deploy.s3.eu-west-1.amazonaws.com/aws-v1.2.1/vm/template.yaml \
+    --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --parameters file://parameters.json
+  aws cloudformation wait stack-update-complete --region eu-west-1 --stack-name my-chroma
+  ```
+
+  We tested the update with the AWS CLI only, not in the console. In our tests the update of the image took 35 seconds, and the server held all the records written before it. When the values change, Systems Manager runs the configuration again: it pulls the image, stops the old container (up to 30 seconds), starts the new one and waits for it. The server is down during the switch. An update that changes none of them does not restart the server.
 - The data stays on the data volume.
 - After a switch, the configuration deletes the image it replaced, so that the root volume of 8 GiB does not fill up update after update.
 - The image of the operating system is the latest Ubuntu 24.04 at the creation of the stack. An update never replaces the instance, so it never moves the data volume. Ubuntu installs its security updates by itself (unattended-upgrades), Docker included. Caddy comes from its own repository, which unattended-upgrades leaves out: update it with `apt-get upgrade`, for example through `aws ssm send-command --document-name AWS-RunShellScript`.
