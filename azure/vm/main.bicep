@@ -22,7 +22,7 @@ param engine string = 'chroma'
 param chromaImage string = 'ghcr.io/chroma-core/chroma:1.5.9'
 
 @description('Image of VecturaDB.')
-param vecturadbImage string = 'ghcr.io/vecturadb/vecturadb:1.0.0-preview.7'
+param vecturadbImage string = 'ghcr.io/vecturadb/vecturadb:1.0.0-preview.8'
 
 @description('Size of the VM. Tested: Standard_B2pts_v2 (Arm), Standard_B1s, Standard_B1ms. Standard_B1ls runs out of memory at the first boot.')
 param vmSize string = 'Standard_B2pts_v2'

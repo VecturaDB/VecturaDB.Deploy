@@ -5,7 +5,7 @@
 The template runs one server in a Google Cloud project of yours, with its data on a disk of its own:
 
 - **Chroma 1.5.9** (`ghcr.io/chroma-core/chroma:1.5.9`, the same image as `chromadb/chroma` on Docker Hub), or
-- **VecturaDB 1.0.0-preview.7** (`ghcr.io/vecturadb/vecturadb:1.0.0-preview.7`), built from Chroma, with sparse vectors, BM25, the Search API, collection fork and API keys.
+- **VecturaDB 1.0.0-preview.8** (`ghcr.io/vecturadb/vecturadb:1.0.0-preview.8`), built from Chroma, with sparse vectors, BM25, the Search API, collection fork and API keys.
 
 Both servers keep the Chroma API, so the Chroma clients connect with the `url` output.
 
