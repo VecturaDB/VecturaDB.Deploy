@@ -5,7 +5,7 @@ Templates that run Chroma 1.5.9 or VecturaDB in your own cloud account.
 For now they are for Azure, AWS and Google Cloud:
 
 - [azure/vm](azure/vm/): one Azure VM with Docker and Caddy, HTTPS, allowed IP addresses, the data on a managed disk and backups with Azure Disk Backup. The one we recommend on Azure.
-- [azure/container-apps](azure/container-apps/): Chroma 1.5.9 on Azure Container Apps, with the data on Azure Files SMB and scale to zero, for a few hours of use a day. Read its limits first.
+- [azure/container-apps](azure/container-apps/): Chroma 1.5.9 on Azure Container Apps, with the data on Azure Files SMB, scale to zero and backups with Azure Backup, for a few hours of use a day. Read its limits first.
 - [aws/vm](aws/vm/): one EC2 instance with Docker and Caddy, HTTPS, allowed IP addresses, the data on an EBS volume and snapshots with Data Lifecycle Manager.
 - [gcp/vm](gcp/vm/): one Compute Engine VM with Docker and Caddy, HTTPS, allowed IP addresses, the data on a disk of its own and snapshots, with Terraform from a guide in Cloud Shell.
 

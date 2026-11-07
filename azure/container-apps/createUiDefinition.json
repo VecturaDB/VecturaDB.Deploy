@@ -67,6 +67,84 @@
     ],
     "steps": [
       {
+        "name": "backups",
+        "label": "Backups",
+        "elements": [
+          {
+            "name": "backup",
+            "type": "Microsoft.Common.OptionsGroup",
+            "label": "Backups of the file share",
+            "defaultValue": "Yes, with Azure Backup",
+            "toolTip": "Azure Backup bills the protected share every month, and Azure Files bills the snapshots. Take the backups while nobody writes: see Backups and restore in the README.",
+            "constraints": {
+              "allowedValues": [
+                {
+                  "label": "Yes, with Azure Backup",
+                  "value": "files"
+                },
+                {
+                  "label": "No",
+                  "value": "none"
+                }
+              ],
+              "required": true
+            }
+          },
+          {
+            "name": "backupEveryHours",
+            "type": "Microsoft.Common.DropDown",
+            "label": "A backup every",
+            "defaultValue": "24 hours",
+            "visible": "[equals(steps('backups').backup, 'files')]",
+            "constraints": {
+              "allowedValues": [
+                {
+                  "label": "4 hours",
+                  "value": 4
+                },
+                {
+                  "label": "6 hours",
+                  "value": 6
+                },
+                {
+                  "label": "8 hours",
+                  "value": 8
+                },
+                {
+                  "label": "12 hours",
+                  "value": 12
+                },
+                {
+                  "label": "24 hours",
+                  "value": 24
+                }
+              ],
+              "required": true
+            }
+          },
+          {
+            "name": "backupRetentionDays",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Days a backup is kept",
+            "defaultValue": "7",
+            "toolTip": "A share keeps at most 200 snapshots: up to 200 days with a backup every 24 hours, 99 every 12, 65 every 8, 49 every 6 and 32 every 4.",
+            "visible": "[equals(steps('backups').backup, 'files')]",
+            "constraints": {
+              "required": true,
+              "regex": "^([1-9]|[1-9][0-9]|1[0-9][0-9]|200)$",
+              "validationMessage": "From 1 to 200."
+            }
+          },
+          {
+            "name": "backupAlreadyOn",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "The backups are already on: this is a new deployment of the template",
+            "toolTip": "Tick it when you deploy the template again on a deployment with its backups on: the share stays protected as it is, and only the schedule and the days kept change. Never on the first deployment: the share would not be protected.",
+            "visible": "[equals(steps('backups').backup, 'files')]"
+          }
+        ]
+      },
+      {
         "name": "advanced",
         "label": "Advanced",
         "elements": [
@@ -110,7 +188,11 @@
       "allowedIpRanges": "[if(equals(basics('access'), 'allowed-ips'), split(replace(basics('ips'), ' ', ''), ','), parse('[]'))]",
       "cpu": "[first(split(steps('advanced').size, '|'))]",
       "memory": "[last(split(steps('advanced').size, '|'))]",
-      "logRetentionDays": "[int(steps('advanced').logRetentionDays)]"
+      "logRetentionDays": "[int(steps('advanced').logRetentionDays)]",
+      "backup": "[steps('backups').backup]",
+      "backupEveryHours": "[if(equals(steps('backups').backup, 'files'), steps('backups').backupEveryHours, 24)]",
+      "backupRetentionDays": "[if(equals(steps('backups').backup, 'files'), int(steps('backups').backupRetentionDays), 7)]",
+      "backupAlreadyOn": "[if(equals(steps('backups').backup, 'files'), steps('backups').backupAlreadyOn, false)]"
     }
   }
 }

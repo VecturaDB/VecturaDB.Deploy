@@ -1,8 +1,8 @@
 # Chroma on Azure Container Apps
 
-> **Disclaimer.** This template and its scripts are provided as is, without warranty of any kind, as stated in the Apache License 2.0. The numbers below are what we measured on 25, 26, 27 and 28 October 2026 in westeurope: your region, data and versions may behave differently. You are responsible for your data: back it up, and test a restore on a copy before you rely on it. Not sure about your case? Open an issue in this repository and we will take a look on a best-effort basis.
+> **Disclaimer.** This template and its scripts are provided as is, without warranty of any kind, as stated in the Apache License 2.0. The numbers below are what we measured on 25, 26, 27 and 28 October and on 6 and 7 November 2026 in westeurope: your region, data and versions may behave differently. You are responsible for your data: back it up, and test a restore on a copy before you rely on it. Not sure about your case? Open an issue in this repository and we will take a look on a best-effort basis.
 
-The template runs **Chroma 1.5.9** (`ghcr.io/chroma-core/chroma:1.5.9`) on Azure Container Apps, with the data on an Azure Files SMB share. The app scales to zero when nobody uses it, so it costs almost nothing on the days it is idle.
+The template runs **Chroma 1.5.9** (`ghcr.io/chroma-core/chroma:1.5.9`) on Azure Container Apps, with the data on an Azure Files SMB share and backups with Azure Backup. The app scales to zero when nobody uses it, so on the days it is idle you pay almost only for the storage and the backups.
 
 **It is for a few hours of use a day.** For a server in use all day, the [VM template](../vm/) is cheaper, faster and needs no manual step at updates: it is the one we recommend.
 
@@ -25,8 +25,8 @@ Read them before you deploy:
   | small add | 74 | 136-147 |
   | 8 concurrent writers, total | 16.2 s | 25.3-26.2 s |
 
-- **Azure Files costs too**: the stored data and the transactions of the share (see [Cost](#cost)).
-- **No backups.** The template does not back up the share. Soft delete keeps a deleted share for 7 days, but it does not bring back data that was changed or deleted inside it.
+- **Azure Files and Azure Backup cost too**: the stored data and the transactions of the share, and with backups on 5 USD a month for the share (see [Cost](#cost)).
+- **Back up while nobody writes.** A backup taken while the server saves the index of a collection can give that collection back broken. Take the backups while the app has no replica, or with the revision deactivated: see [Backups and restore](#backups-and-restore).
 - **No API keys.** Chroma 1.5.9 has none, so the server answers only the IP ranges you allow, or only apps in the same Container Apps environment.
 
 ## What it creates
@@ -37,6 +37,7 @@ Read them before you deploy:
 | Container Apps environment | Consumption plan |
 | Storage account and file share | SMB, transaction optimized, 100 GiB quota; soft delete of the share, 7 days |
 | Log Analytics workspace | The logs of the app, 30 days by default |
+| Recovery Services vault | Only with backups on: Azure Backup of the share, with the snapshots in the storage account |
 
 The server reaches the share through two mounts:
 
@@ -73,6 +74,15 @@ In our tests the old revision kept serving while the new one waited. After the d
 
 - Deactivate the old revision within 5 minutes. After 5 minutes of waiting the new revision shows Failed; in our tests it started anyway once the old one was deactivated, 22 seconds later.
 - An update made while the app has no replica (about 10 minutes after the last request) needs no manual step: nothing holds the lock. In our tests the new revision started at once, the old one went away by itself, and the data was all there.
+- With backups on, add `backupAlreadyOn=true` to every new deployment; in the portal, tick "The backups are already on" in Backups. The share stays protected as it is, and the template applies again only the schedule and the days kept. Without it, the template protects the share again while the policy applies itself to the share: Azure Backup starts two configure jobs at the same time, and one of them fails ("Another configure protection operation is in progress for this item"). The share stays protected anyway. Never use it on the first deployment: the share would not be protected. In our tests, with `backupAlreadyOn=true`, the deployment ended in 36-100 seconds, one configure job, from the policy, completed 2-5 minutes later, a change of the days kept was applied, and the next backup worked.
+
+For example, a new deployment with the Azure CLI, the backups on, and the parameters of the first deployment:
+
+```sh
+az deployment group create -g my-chroma \
+  --template-uri https://raw.githubusercontent.com/VecturaDB/VecturaDB.Deploy/azure-v1.4.0/azure/container-apps/azuredeploy.json \
+  -p allowedIpRanges='["203.0.113.10/32"]' backupAlreadyOn=true
+```
 
 ## A lock left by a lost replica
 
@@ -90,6 +100,56 @@ az storage share close-handle --account-name $ACCOUNT --account-key $KEY --name 
 
 The list shows a handle for each replica that opened the file, with its client IP and the time it was opened: the lost replica is the older one. Never use `--close-all`: in our tests it also closed the handle of the process that was waiting, which then failed with an input/output error.
 
+## Backups and restore
+
+With `backup=files` (the default), Azure Backup takes a snapshot of the share every 24 hours by default (`backupEveryHours`: 4, 6, 8, 12 or 24, the first of the day at 02:00 UTC), and keeps it 7 days (`backupRetentionDays`). A share keeps at most 200 snapshots: up to 200 days with a backup every 24 hours, 99 every 12, 65 every 8, 49 every 6 and 32 every 4. The snapshots stay in the storage account, next to the share. See [Azure Files backup](https://learn.microsoft.com/en-us/azure/backup/azure-file-share-backup-overview).
+
+Azure Backup puts a delete lock on the storage account, `AzureBackupProtectionLock`: nobody can delete the account or the share by mistake. The lock goes away when the account is unregistered from the vault (see [Delete everything](#delete-everything)). The soft delete of Azure Backup does not cover the snapshots of a share; the share has a soft delete of its own, 7 days.
+
+**Take the backups while nobody writes.** A snapshot taken while the server saves the index of a collection holds that index halfway, as a power cut would. In our tests a backup taken a few seconds after 2,000 records were added gave that collection back broken: after the restore it answered "Error getting embedding". This is how Chroma 1.5.9 behaves after a power cut with more than 1,000 records in a collection, not a fault of Azure Backup. The backups taken with the server stopped came back whole, the collections of 1,500 and 2,000 records included:
+
+- the scheduled backup starts within 2 hours of 02:00 UTC. If nobody uses the app then, it has no replica, and the backup holds files that nothing is writing;
+- for an on-demand backup, deactivate the revision first, and activate it again after the backup:
+
+```sh
+REV=$(az containerapp revision list -g my-chroma -n chroma --query "[0].name" -o tsv)
+ACCOUNT=$(az storage account list -g my-chroma --query "[0].name" -o tsv)
+az containerapp revision deactivate -g my-chroma -n chroma --revision $REV
+JOB=$(az backup protection backup-now -g my-chroma -v chroma-backup -c $ACCOUNT -i data \
+  --backup-management-type AzureStorage --workload-type AzureFileShare --query name -o tsv)
+az backup job wait -g my-chroma -v chroma-backup -n $JOB
+az containerapp revision activate -g my-chroma -n chroma --revision $REV
+```
+
+To restore, with the revision deactivated as above, restore a recovery point to the original location of the share, overwriting the files, then activate the revision:
+
+```sh
+az backup recoverypoint list -g my-chroma -v chroma-backup -c $ACCOUNT -i data \
+  --backup-management-type AzureStorage --workload-type AzureFileShare -o table
+JOB=$(az backup restore restore-azurefileshare -g my-chroma -v chroma-backup -c $ACCOUNT -i data -r <recovery point> \
+  --resolve-conflict Overwrite --restore-mode OriginalLocation --query name -o tsv)
+az backup job wait -g my-chroma -v chroma-backup -n $JOB
+az containerapp revision activate -g my-chroma -n chroma --revision $REV
+```
+
+In the portal the same restore is Restore Share in the backup item of the share, with Original Location and Overwrite ([Microsoft's steps](https://learn.microsoft.com/en-us/azure/backup/restore-afs)); we tested it with the Azure CLI only.
+
+**The data written after the backup is lost**: take an on-demand backup first if you may want it back. The restore overwrites the files of the backup and leaves the others: the folders of the collections created after the backup stay in the share, and the server does not use them.
+
+In our tests:
+
+| Step | Time |
+|---|---|
+| Deactivation of the revision, until no replica | 35-40 s |
+| On-demand backup, the job | 3-5 s |
+| Restore to the original location, the job | 34-188 s |
+| Activation, until the server answers | 25-37 s |
+| From the last request to zero replicas | 582 s |
+
+`az backup job wait` came back up to 3 minutes after the end of the job.
+
+After the restores the server held the collections of the backup, with all their records, and not the ones written after it. The next backup worked on the same share.
+
 ## Cost
 
 Container Apps bills the seconds a replica runs: active while it serves, at a lower rate while it waits before scaling to zero (about 10 minutes after each use). The first 180,000 vCPU-seconds, 360,000 GiB-seconds and 2 million requests of each month are free, for the whole subscription. With 0.5 CPU and 1 GiB, at the list prices of westeurope in USD on 27 October 2026:
@@ -104,23 +164,38 @@ Container Apps bills the seconds a replica runs: active while it serves, at a lo
 Not in the table:
 
 - Azure Files: 0.06 USD per GB stored a month, and the transactions. In our tests a write to Chroma cost about 27 transactions of the share, mostly write transactions: about 0.03 USD for every 1,000 writes. Reads cost almost none. A replica that waits without requests made about 27 transactions a minute.
+- Azure Backup, with backups on (the default): 5 USD a month for the protected share, at the list prices of westeurope on 6 November 2026. Azure Files bills the snapshots at the price of the share, 0.06 USD per GB a month, for the data that changed since the snapshot before.
 - Log Analytics bills the logs it receives.
 - Other apps in the same subscription use the same free grant.
 
 ## Delete everything
 
-There is no backup vault here: deleting the resource group deletes the whole deployment. In our tests it took 27-30 minutes (1632-1810 seconds), most of it for the Container Apps environment.
-
-In the portal, open the resource group and select Delete resource group. Type the name of the group, select Delete, then Delete again to confirm.
-
-With the Azure CLI:
+Without backups (`backup=none`), deleting the resource group deletes the whole deployment. With backups on, two things stop the deletion first: the lock of Azure Backup on the storage account, and the share protected in the vault. So stop the protection and delete its backup data, unregister the storage account, which also removes the lock, then delete the group:
 
 ```sh
+ACCOUNT=$(az storage account list -g my-chroma --query "[0].name" -o tsv)
+az backup protection disable -g my-chroma -v chroma-backup -c $ACCOUNT -i data \
+  --backup-management-type AzureStorage --workload-type AzureFileShare --delete-backup-data true --yes
+az backup container unregister -g my-chroma -v chroma-backup -c $ACCOUNT --backup-management-type AzureStorage --yes
+az lock list -g my-chroma -o table
 az group delete -n my-chroma --yes
 ```
 
-Two things stay recoverable for 14 days after the deletion, as Azure does for these resources, and then go away. In our tests both showed up in the lists of deleted resources right after the deletion:
+In our tests `az backup container unregister` answered `CloudInternalError` every time, also 3 minutes after the end of the protection, but the account was unregistered: the lock was gone at once, and the group was then deleted. Before the deletion of the group, `az lock list` must show no lock.
 
+In the portal: in the vault `chroma-backup`, stop the backup of the share with Delete Backup Data, then unregister the storage account under Backup Infrastructure ([Microsoft's steps](https://learn.microsoft.com/en-us/azure/backup/manage-afs-backup#stop-protection-on-a-file-share)). Then open the resource group and select Delete resource group, type the name of the group, select Delete, then Delete again to confirm. We tested the deletion with the Azure CLI only.
+
+In our tests:
+
+| Step | Time |
+|---|---|
+| Protection stopped, backup data deleted | 33-104 s |
+| Storage account unregistered | 18-44 s |
+| Resource group deleted, most of it for the Container Apps environment | 27-30 minutes (1632-1817 s) |
+
+Three things stay recoverable for 14 days after the deletion, as Azure does for these resources, and then go away. In our tests they showed up in the lists of deleted resources right after the deletion:
+
+- the vault, empty, in soft delete: Azure purges it 14 days after the protection was stopped ([soft delete for Azure Backup](https://learn.microsoft.com/en-us/azure/backup/secure-by-default));
 - the storage account, with the share and the data in it ([recover a deleted storage account](https://learn.microsoft.com/en-us/azure/storage/common/storage-account-recover));
 - the Log Analytics workspace, with the logs ([delete and recover a workspace](https://learn.microsoft.com/en-us/azure/azure-monitor/logs/delete-workspace)). To remove the logs at once, delete the workspace permanently before the group:
 
@@ -130,7 +205,7 @@ az monitor log-analytics workspace delete -g my-chroma -n chroma-logs --force --
 
 ## Why the VM is the recommended choice
 
-On the [VM](../vm/) the data is on a local managed disk: reads are about twice as fast and writes 2 to 4 times, an update needs no manual step, the server never sleeps, and backups with Azure Disk Backup are part of the template. From about 14 USD a month, whatever the use.
+On the [VM](../vm/) the data is on a local managed disk: reads are about twice as fast and writes 2 to 4 times, an update needs no manual step, the server never sleeps, and Azure Disk Backup has no fee per protected disk. From about 14 USD a month, whatever the use.
 
 ## License and trademarks
 

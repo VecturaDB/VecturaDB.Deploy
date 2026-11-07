@@ -188,7 +188,7 @@ In a few regions Azure enforces soft delete for backup vaults, and it cannot be 
 
 ## Container Apps, for a few hours of use a day
 
-The [Container Apps template](../container-apps/) runs Chroma 1.5.9 on Azure Container Apps, with the data on an Azure Files share. It scales to zero when nobody uses it, so it costs almost nothing on the days it is idle. It also has limits that this VM does not have: an update made while the app is in use needs a manual step, the first request after scaling to zero waited 26-32 seconds in our tests, reads and writes are slower, and there are no backups and no API keys. See [its limits](../container-apps/#limits).
+The [Container Apps template](../container-apps/) runs Chroma 1.5.9 on Azure Container Apps, with the data on an Azure Files share. It scales to zero when nobody uses it, so on the days it is idle you pay almost only for the storage and the backups. It also has limits that this VM does not have: an update made while the app is in use needs a manual step, the first request after scaling to zero waited 26-32 seconds in our tests, reads and writes are slower, and there are no API keys. See [its limits](../container-apps/#limits).
 
 ## License and trademarks
 

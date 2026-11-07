@@ -1,8 +1,9 @@
 // Chroma on Azure Container Apps, with the data on an Azure Files SMB share and scale to zero.
 // One replica at most. A lock file in front of the server keeps one process on the data: during a change of revision
-// the new replica waits until the old one stops (see the README for the manual step).
+// the new replica waits until the old one stops (see the README for the manual step). Backups of the share with Azure
+// Backup.
 
-metadata description = 'Chroma 1.5.9 on Azure Container Apps, with the data on Azure Files SMB and scale to zero.'
+metadata description = 'Chroma 1.5.9 on Azure Container Apps, with the data on Azure Files SMB, scale to zero and backups with Azure Backup.'
 
 @description('Name of the container app, and prefix of the other resources: 2 to 20 lowercase letters, digits and hyphens.')
 @minLength(2)
@@ -36,9 +37,40 @@ param memory string = '1Gi'
 @maxValue(730)
 param logRetentionDays int = 30
 
+@description('Backups of the file share: files (Azure Backup, snapshots of the share in its storage account) or none.')
+@allowed([
+  'files'
+  'none'
+])
+param backup string = 'files'
+
+@description('Hours between two backups of the file share.')
+@allowed([
+  4
+  6
+  8
+  12
+  24
+])
+param backupEveryHours int = 24
+
+@description('Days a backup is kept. A share keeps at most 200 snapshots: up to 200 days with a backup every 24 hours, 99 every 12, 65 every 8, 49 every 6 and 32 every 4.')
+@minValue(1)
+@maxValue(200)
+param backupRetentionDays int = 7
+
+@description('true on a new deployment of this template when its backups are already on: the share stays protected as it is, and only the schedule and the days kept are applied again. Without it, a new deployment protects the share again, and Azure Backup reports one of its two configure jobs as failed. Never true on the first deployment: the share would not be protected.')
+param backupAlreadyOn bool = false
+
+var backupsPerDay = 24 / backupEveryHours
+// With more backups a day, Azure Backup allows the snapshots of a day for each day kept, plus one day.
+var backupMaxDays = backupEveryHours == 24 ? 200 : 200 / backupsPerDay - 1
 var checks = [
   access == 'allowed-ips' && empty(allowedIpRanges)
     ? fail('access allowed-ips needs at least one range in allowedIpRanges.')
+    : 'ok'
+  backup == 'files' && backupRetentionDays > backupMaxDays
+    ? fail('With a backup every ${backupEveryHours} hours, backupRetentionDays can be at most ${backupMaxDays}: a share keeps at most 200 snapshots.')
     : 'ok'
 ]
 var suffix = uniqueString(resourceGroup().id, name)
@@ -225,6 +257,90 @@ resource app 'Microsoft.App/containerApps@2026-01-01' = {
         }
       ]
     }
+  }
+}
+
+// Backups of the file share with Azure Backup: snapshots of the share, kept in its storage account. As Microsoft's samples
+// recovery-services-backup-file-share and recovery-services-backup-file-share-hourly (azure-quickstart-templates).
+var backupFabric = 'Azure'
+var backupManagementType = 'AzureStorage'
+var backupRunTimes = [
+  '2020-01-01T02:00:00Z'
+]
+
+resource vault 'Microsoft.RecoveryServices/vaults@2021-12-01' = if (backup == 'files') {
+  name: '${name}-backup'
+  location: location
+  sku: {
+    name: 'RS0'
+    tier: 'Standard'
+  }
+  properties: {}
+}
+
+resource backupPolicy 'Microsoft.RecoveryServices/vaults/backupPolicies@2022-02-01' = if (backup == 'files') {
+  parent: vault
+  name: 'data-share'
+  properties: {
+    backupManagementType: backupManagementType
+    // The first backup of the day at 02:00 UTC; with more backups a day, the last one 24 hours minus the interval later.
+    schedulePolicy: backupEveryHours == 24
+      ? {
+          schedulePolicyType: 'SimpleSchedulePolicy'
+          scheduleRunFrequency: 'Daily'
+          scheduleRunTimes: backupRunTimes
+        }
+      : {
+          schedulePolicyType: 'SimpleSchedulePolicy'
+          scheduleRunFrequency: 'Hourly'
+          scheduleRunTimes: backupRunTimes
+          hourlySchedule: {
+            interval: backupEveryHours
+            scheduleWindowStartTime: '2020-01-01T02:00:00.000Z'
+            scheduleWindowDuration: 24 - backupEveryHours
+          }
+        }
+    retentionPolicy: {
+      dailySchedule: {
+        retentionTimes: backupRunTimes
+        retentionDuration: {
+          count: backupRetentionDays
+          durationType: 'Days'
+        }
+      }
+      retentionPolicyType: 'LongTermRetentionPolicy'
+    }
+    timeZone: 'UTC'
+    workLoadType: 'AzureFileShare'
+  }
+}
+
+// The storage account registered to the vault, then the share protected with the policy. A new deployment that puts
+// both the policy and the protected share again starts two configure jobs on the share, and one fails: with
+// backupAlreadyOn the protection stays as it is, and the policy alone applies the changes.
+resource backupContainer 'Microsoft.RecoveryServices/vaults/backupFabrics/protectionContainers@2021-12-01' = if (backup == 'files' && !backupAlreadyOn) {
+  name: '${vault.name}/${backupFabric}/storagecontainer;Storage;${resourceGroup().name};${account.name}'
+  properties: {
+    backupManagementType: backupManagementType
+    containerType: 'StorageContainer'
+    sourceResourceId: account.id
+  }
+  dependsOn: [
+    backupPolicy
+    share
+  ]
+}
+
+resource protectShare 'Microsoft.RecoveryServices/vaults/backupFabrics/protectionContainers/protectedItems@2021-12-01' = if (backup == 'files' && !backupAlreadyOn) {
+  parent: backupContainer
+  name: 'AzureFileShare;${share.name}'
+  properties: {
+    protectedItemType: 'AzureFileShareProtectedItem'
+    sourceResourceId: account.id
+    policyId: backupPolicy.id
+    // As the daily sample: the API takes it, the types of Bicep do not know it.
+    #disable-next-line BCP037
+    isInlineInquiry: true
   }
 }
 

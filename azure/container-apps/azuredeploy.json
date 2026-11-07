@@ -5,9 +5,9 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "6420210146158129625"
+      "templateHash": "13623495639613251793"
     },
-    "description": "Chroma 1.5.9 on Azure Container Apps, with the data on Azure Files SMB and scale to zero."
+    "description": "Chroma 1.5.9 on Azure Container Apps, with the data on Azure Files SMB, scale to zero and backups with Azure Backup."
   },
   "parameters": {
     "name": {
@@ -73,13 +73,62 @@
       "metadata": {
         "description": "Days of logs in Log Analytics."
       }
+    },
+    "backup": {
+      "type": "string",
+      "defaultValue": "files",
+      "allowedValues": [
+        "files",
+        "none"
+      ],
+      "metadata": {
+        "description": "Backups of the file share: files (Azure Backup, snapshots of the share in its storage account) or none."
+      }
+    },
+    "backupEveryHours": {
+      "type": "int",
+      "defaultValue": 24,
+      "allowedValues": [
+        4,
+        6,
+        8,
+        12,
+        24
+      ],
+      "metadata": {
+        "description": "Hours between two backups of the file share."
+      }
+    },
+    "backupRetentionDays": {
+      "type": "int",
+      "defaultValue": 7,
+      "minValue": 1,
+      "maxValue": 200,
+      "metadata": {
+        "description": "Days a backup is kept. A share keeps at most 200 snapshots: up to 200 days with a backup every 24 hours, 99 every 12, 65 every 8, 49 every 6 and 32 every 4."
+      }
+    },
+    "backupAlreadyOn": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "true on a new deployment of this template when its backups are already on: the share stays protected as it is, and only the schedule and the days kept are applied again. Without it, a new deployment protects the share again, and Azure Backup reports one of its two configure jobs as failed. Never true on the first deployment: the share would not be protected."
+      }
     }
   },
   "variables": {
+    "backupsPerDay": "[div(24, parameters('backupEveryHours'))]",
+    "backupMaxDays": "[if(equals(parameters('backupEveryHours'), 24), 200, sub(div(200, variables('backupsPerDay')), 1))]",
     "checks": [
-      "[if(and(equals(parameters('access'), 'allowed-ips'), empty(parameters('allowedIpRanges'))), fail('access allowed-ips needs at least one range in allowedIpRanges.'), 'ok')]"
+      "[if(and(equals(parameters('access'), 'allowed-ips'), empty(parameters('allowedIpRanges'))), fail('access allowed-ips needs at least one range in allowedIpRanges.'), 'ok')]",
+      "[if(and(equals(parameters('backup'), 'files'), greater(parameters('backupRetentionDays'), variables('backupMaxDays'))), fail(format('With a backup every {0} hours, backupRetentionDays can be at most {1}: a share keeps at most 200 snapshots.', parameters('backupEveryHours'), variables('backupMaxDays'))), 'ok')]"
     ],
-    "suffix": "[uniqueString(resourceGroup().id, parameters('name'))]"
+    "suffix": "[uniqueString(resourceGroup().id, parameters('name'))]",
+    "backupFabric": "Azure",
+    "backupManagementType": "AzureStorage",
+    "backupRunTimes": [
+      "2020-01-01T02:00:00Z"
+    ]
   },
   "resources": [
     {
@@ -283,6 +332,78 @@
       "dependsOn": [
         "[resourceId('Microsoft.App/managedEnvironments', format('{0}-env', parameters('name')))]",
         "[resourceId('Microsoft.App/managedEnvironments/storages', format('{0}-env', parameters('name')), 'data')]"
+      ]
+    },
+    {
+      "condition": "[equals(parameters('backup'), 'files')]",
+      "type": "Microsoft.RecoveryServices/vaults",
+      "apiVersion": "2021-12-01",
+      "name": "[format('{0}-backup', parameters('name'))]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "RS0",
+        "tier": "Standard"
+      },
+      "properties": {}
+    },
+    {
+      "condition": "[equals(parameters('backup'), 'files')]",
+      "type": "Microsoft.RecoveryServices/vaults/backupPolicies",
+      "apiVersion": "2022-02-01",
+      "name": "[format('{0}/{1}', format('{0}-backup', parameters('name')), 'data-share')]",
+      "properties": {
+        "backupManagementType": "[variables('backupManagementType')]",
+        "schedulePolicy": "[if(equals(parameters('backupEveryHours'), 24), createObject('schedulePolicyType', 'SimpleSchedulePolicy', 'scheduleRunFrequency', 'Daily', 'scheduleRunTimes', variables('backupRunTimes')), createObject('schedulePolicyType', 'SimpleSchedulePolicy', 'scheduleRunFrequency', 'Hourly', 'scheduleRunTimes', variables('backupRunTimes'), 'hourlySchedule', createObject('interval', parameters('backupEveryHours'), 'scheduleWindowStartTime', '2020-01-01T02:00:00.000Z', 'scheduleWindowDuration', sub(24, parameters('backupEveryHours')))))]",
+        "retentionPolicy": {
+          "dailySchedule": {
+            "retentionTimes": "[variables('backupRunTimes')]",
+            "retentionDuration": {
+              "count": "[parameters('backupRetentionDays')]",
+              "durationType": "Days"
+            }
+          },
+          "retentionPolicyType": "LongTermRetentionPolicy"
+        },
+        "timeZone": "UTC",
+        "workLoadType": "AzureFileShare"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.RecoveryServices/vaults', format('{0}-backup', parameters('name')))]"
+      ]
+    },
+    {
+      "condition": "[and(equals(parameters('backup'), 'files'), not(parameters('backupAlreadyOn')))]",
+      "type": "Microsoft.RecoveryServices/vaults/backupFabrics/protectionContainers",
+      "apiVersion": "2021-12-01",
+      "name": "[format('{0}/{1}/storagecontainer;Storage;{2};{3}', format('{0}-backup', parameters('name')), variables('backupFabric'), resourceGroup().name, format('st{0}{1}', take(replace(parameters('name'), '-', ''), 10), take(variables('suffix'), 12)))]",
+      "properties": {
+        "backupManagementType": "[variables('backupManagementType')]",
+        "containerType": "StorageContainer",
+        "sourceResourceId": "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}{1}', take(replace(parameters('name'), '-', ''), 10), take(variables('suffix'), 12)))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}{1}', take(replace(parameters('name'), '-', ''), 10), take(variables('suffix'), 12)))]",
+        "[resourceId('Microsoft.RecoveryServices/vaults/backupPolicies', format('{0}-backup', parameters('name')), 'data-share')]",
+        "[resourceId('Microsoft.Storage/storageAccounts/fileServices/shares', format('st{0}{1}', take(replace(parameters('name'), '-', ''), 10), take(variables('suffix'), 12)), 'default', 'data')]",
+        "[resourceId('Microsoft.RecoveryServices/vaults', format('{0}-backup', parameters('name')))]"
+      ]
+    },
+    {
+      "condition": "[and(equals(parameters('backup'), 'files'), not(parameters('backupAlreadyOn')))]",
+      "type": "Microsoft.RecoveryServices/vaults/backupFabrics/protectionContainers/protectedItems",
+      "apiVersion": "2021-12-01",
+      "name": "[format('{0}/{1}/{2}/{3}', split(format('{0}/{1}/storagecontainer;Storage;{2};{3}', format('{0}-backup', parameters('name')), variables('backupFabric'), resourceGroup().name, format('st{0}{1}', take(replace(parameters('name'), '-', ''), 10), take(variables('suffix'), 12))), '/')[0], split(format('{0}/{1}/storagecontainer;Storage;{2};{3}', format('{0}-backup', parameters('name')), variables('backupFabric'), resourceGroup().name, format('st{0}{1}', take(replace(parameters('name'), '-', ''), 10), take(variables('suffix'), 12))), '/')[1], split(format('{0}/{1}/storagecontainer;Storage;{2};{3}', format('{0}-backup', parameters('name')), variables('backupFabric'), resourceGroup().name, format('st{0}{1}', take(replace(parameters('name'), '-', ''), 10), take(variables('suffix'), 12))), '/')[2], format('AzureFileShare;{0}', 'data'))]",
+      "properties": {
+        "protectedItemType": "AzureFileShareProtectedItem",
+        "sourceResourceId": "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}{1}', take(replace(parameters('name'), '-', ''), 10), take(variables('suffix'), 12)))]",
+        "policyId": "[resourceId('Microsoft.RecoveryServices/vaults/backupPolicies', format('{0}-backup', parameters('name')), 'data-share')]",
+        "isInlineInquiry": true
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}{1}', take(replace(parameters('name'), '-', ''), 10), take(variables('suffix'), 12)))]",
+        "[resourceId('Microsoft.RecoveryServices/vaults/backupFabrics/protectionContainers', split(format('{0}/{1}/storagecontainer;Storage;{2};{3}', format('{0}-backup', parameters('name')), variables('backupFabric'), resourceGroup().name, format('st{0}{1}', take(replace(parameters('name'), '-', ''), 10), take(variables('suffix'), 12))), '/')[0], split(format('{0}/{1}/storagecontainer;Storage;{2};{3}', format('{0}-backup', parameters('name')), variables('backupFabric'), resourceGroup().name, format('st{0}{1}', take(replace(parameters('name'), '-', ''), 10), take(variables('suffix'), 12))), '/')[1], split(format('{0}/{1}/storagecontainer;Storage;{2};{3}', format('{0}-backup', parameters('name')), variables('backupFabric'), resourceGroup().name, format('st{0}{1}', take(replace(parameters('name'), '-', ''), 10), take(variables('suffix'), 12))), '/')[2])]",
+        "[resourceId('Microsoft.RecoveryServices/vaults/backupPolicies', format('{0}-backup', parameters('name')), 'data-share')]",
+        "[resourceId('Microsoft.Storage/storageAccounts/fileServices/shares', format('st{0}{1}', take(replace(parameters('name'), '-', ''), 10), take(variables('suffix'), 12)), 'default', 'data')]"
       ]
     }
   ],
