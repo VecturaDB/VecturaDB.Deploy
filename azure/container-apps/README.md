@@ -74,7 +74,7 @@ In our tests the old revision kept serving while the new one waited. After the d
 
 - Deactivate the old revision within 5 minutes. After 5 minutes of waiting the new revision shows Failed; in our tests it started anyway once the old one was deactivated, 22 seconds later.
 - An update made while the app has no replica (about 10 minutes after the last request) needs no manual step: nothing holds the lock. In our tests the new revision started at once, the old one went away by itself, and the data was all there.
-- With backups on, add `backupAlreadyOn=true` to every new deployment; in the portal, tick "The backups are already on" in Backups. The share stays protected as it is, and the template applies again only the schedule and the days kept. Without it, the template protects the share again while the policy applies itself to the share: Azure Backup starts two configure jobs at the same time, and one of them fails ("Another configure protection operation is in progress for this item"). The share stays protected anyway. Never use it on the first deployment: the share would not be protected. In our tests, with `backupAlreadyOn=true`, the deployment ended in 36-100 seconds, one configure job, from the policy, completed 2-5 minutes later, a change of the days kept was applied, and the next backup worked.
+- With backups on, add `backupAlreadyOn=true` to every new deployment; in the portal, tick "The backups are already on" in Backups. The share stays protected as it is, and the template applies again only the schedule and the days kept. Without it, the template protects the share again while the policy applies itself to the share: Azure Backup starts two configure jobs at the same time, and one of them fails ("Another configure protection operation is in progress for this item"). The share stays protected anyway. Never use it on the first deployment: the share would not be protected. In our tests, with `backupAlreadyOn=true`, the deployment ended in 36-100 seconds, one configure job, from the policy, lasted 1-5 minutes, a change of the days kept was applied, and the next backup worked.
 
 For example, a new deployment with the Azure CLI, the backups on, and the parameters of the first deployment:
 
@@ -140,10 +140,10 @@ In our tests:
 
 | Step | Time |
 |---|---|
-| Deactivation of the revision, until no replica | 35-40 s |
+| Deactivation of the revision, until no replica | 35-43 s |
 | On-demand backup, the job | 3-5 s |
-| Restore to the original location, the job | 34-188 s |
-| Activation, until the server answers | 25-37 s |
+| Restore to the original location, the job | 33-188 s |
+| Activation, until the server answers | 25-45 s |
 | From the last request to zero replicas | 582 s |
 
 `az backup job wait` came back up to 3 minutes after the end of the job.
