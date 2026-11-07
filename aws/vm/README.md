@@ -29,13 +29,13 @@ Files:
 
 ## Deploy
 
-[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fvecturadb-deploy.s3.eu-west-1.amazonaws.com%2Faws-v1.2.1%2Fvm%2Ftemplate.yaml&stackName=chroma)
+[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fvecturadb-deploy.s3.eu-west-1.amazonaws.com%2Faws-v1.2.2%2Fvm%2Ftemplate.yaml&stackName=chroma)
 
-CloudFormation reads templates from Amazon S3, so the button uses a copy of `template.yaml` of the tag `aws-v1.2.1` in a public bucket: `https://vecturadb-deploy.s3.eu-west-1.amazonaws.com/aws-v1.2.1/vm/template.yaml`.
+CloudFormation reads templates from Amazon S3, so the button uses a copy of `template.yaml` of the tag `aws-v1.2.2` in a public bucket: `https://vecturadb-deploy.s3.eu-west-1.amazonaws.com/aws-v1.2.2/vm/template.yaml`.
 
 The same template with VecturaDB already chosen as the engine, and `vecturadb` as the name of the stack (`param_Engine=vecturadb` in the link):
 
-[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fvecturadb-deploy.s3.eu-west-1.amazonaws.com%2Faws-v1.2.1%2Fvm%2Ftemplate.yaml&stackName=vecturadb&param_Engine=vecturadb)
+[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fvecturadb-deploy.s3.eu-west-1.amazonaws.com%2Faws-v1.2.2%2Fvm%2Ftemplate.yaml&stackName=vecturadb&param_Engine=vecturadb)
 
 The button opens the quick-create page of CloudFormation in eu-west-1, with the template and the name of the stack already filled in:
 
@@ -168,7 +168,7 @@ After the restore the server held the data of the snapshot, 4,400 records writte
 
   ```sh
   aws cloudformation update-stack --region eu-west-1 --stack-name my-chroma \
-    --template-url https://vecturadb-deploy.s3.eu-west-1.amazonaws.com/aws-v1.2.1/vm/template.yaml \
+    --template-url https://vecturadb-deploy.s3.eu-west-1.amazonaws.com/aws-v1.2.2/vm/template.yaml \
     --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --parameters file://parameters.json
   aws cloudformation wait stack-update-complete --region eu-west-1 --stack-name my-chroma
   ```
