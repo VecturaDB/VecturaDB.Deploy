@@ -98,6 +98,8 @@ Soft delete is on (`backupSoftDelete`): deleted backups stay 14 days, and so doe
 
 The snapshots are taken while the server runs, so a restored disk is like a disk after a power cut. In our tests the server started on it with all the data of the backup.
 
+A snapshot taken while the server saves the index of a collection can give that collection back broken, as a power cut would. It can happen to a collection of more than 1,000 records, where the server starts saving its index, with Chroma 1.5.9 and with VecturaDB. In our tests of 6 November 2026 it happened twice, each time to a collection of 2,000 records added a few seconds before the backup: on AWS with VecturaDB ("Error creating hnsw segment writer") and on Container Apps with Chroma 1.5.9 ("Error getting embedding"). So take an on-demand backup while nobody writes. The scheduled ones are set at 02:00 UTC: keep the writes away from that hour.
+
 To restore:
 
 1. In the backup vault, restore a recovery point to a new disk in the same resource group: Backup instances, then Restore. The template gives the vault the role it needs for that (Disk Restore Operator).

@@ -104,6 +104,8 @@ With `backup = "snapshots"` (the default), a snapshot schedule of Compute Engine
 
 The snapshots are taken while the server runs, so a restored disk is like a disk after a power cut: the restore checks its file system before it uses it.
 
+A snapshot taken while the server saves the index of a collection can give that collection back broken, as a power cut would. It can happen to a collection of more than 1,000 records, where the server starts saving its index, with Chroma 1.5.9 and with VecturaDB. In our tests of 6 November 2026 it happened twice, each time to a collection of 2,000 records added a few seconds before the backup: on AWS with VecturaDB ("Error creating hnsw segment writer") and on Container Apps with Chroma 1.5.9 ("Error getting embedding"). So take an on-demand snapshot while nobody writes. The scheduled ones are set at 02:00 UTC: keep the writes away from that hour.
+
 To list the snapshots:
 
 ```sh
